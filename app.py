@@ -111,9 +111,15 @@ JOBS = {}   # 실행 id -> {"step": 0~4, "done": bool, "result"|"error"}  (메�
 
 RANK = {"하": 0, "중": 1, "상": 2}
 
+def drop_file(proj, fid):
+    """처리가 끝나면 Upstage에 올린 사본을 지운다(금융 문서 잔류 방지). 실패해도 흐름은 막지 않는다."""
+    try: client(proj).files.delete(fid)
+    except Exception: pass
+
 def verify(lv, pdf, out):
     """마스킹본을 등급 에이전트에 다시 넣어 목표 등급과 비교한다(통과 = 목표와 정확히 같음). 실패해도 전체 흐름은 막지 않는다."""
     target = LABEL[lv]
+    fid = None
     try:
         proj = scope(AGENT_GRADE)
         fid = client(proj).files.create(file=(f"{lv}.pdf", pdf), purpose="user_data").id
@@ -122,14 +128,21 @@ def verify(lv, pdf, out):
         got = parse_grade(step_text(g, "instruct"))
     except Exception:
         got = None
+    finally:
+        if fid: drop_file(proj, fid)
     if got is None: return {"재판정": None, "검증": "불가", "검증메모": "재판정 결과를 읽지 못했습니다. 마스킹본을 직접 확인해 주세요."}
     if got == target: return {"재판정": got, "검증": "통과", "검증메모": f"재판정 {got} 등급 · 목표 등급에 도달했습니다."}
     if RANK[got] > RANK[target]: return {"재판정": got, "검증": "미달", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 높습니다. 마스킹이 덜 됐을 수 있습니다."}
     return {"재판정": got, "검증": "과마스킹", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 낮습니다. 필요 이상으로 가려졌을 수 있습니다."}
 
 def pipeline(rid, data, filename, stage):
+    uploaded = {}   # 프로젝트 -> 올린 원본 file id. 끝나면(실패해도) Upstage에서 지운다
+    try: return _pipeline(rid, data, filename, stage, uploaded)
+    finally:
+        for pj, fid in uploaded.items(): drop_file(pj, fid)
+
+def _pipeline(rid, data, filename, stage, uploaded):
     t0 = time.time(); out = RUNS / rid
-    uploaded = {}
     def ensure(agent_ids):   # 에이전트 소속(프로젝트)마다 파일을 한 번씩 올린다
         for pj in {scope(a) for a in agent_ids}:
             if pj not in uploaded:

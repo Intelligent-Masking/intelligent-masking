@@ -11,8 +11,10 @@ assert app.NEED["상"] == ["mid", "low"] and app.NEED["중"] == ["low"] and app.
 # 재판정 검증: 통과(목표와 같음) / 미달(더 높음) / 과마스킹(더 낮음) / 불가(읽기 실패)
 import tempfile
 from pathlib import Path
+deleted = []
 class _Files:
     def create(self, **kw): return type("F", (), {"id": "file_x"})()
+    def delete(self, fid): deleted.append(fid)
 class _Client: files = _Files()
 app.scope = lambda a: "proj_x"; app.client = lambda p=None: _Client()
 def fake(decision):
@@ -21,6 +23,7 @@ out = Path(tempfile.mkdtemp())
 for decision, lv, want in (("Decision: 중", "mid", "통과"), ("Decision: 상", "mid", "미달"), ("Decision: 하", "mid", "과마스킹"),
                            ("Decision: 하", "low", "통과"), ("Decision: 중", "low", "미달"), ("이상한 응답", "low", "불가")):
     fake(decision); assert app.verify(lv, b"%PDF", out)["검증"] == want, (decision, lv)
+assert len(deleted) == 6   # 재판정용 업로드는 매번 지운다
 
 # PDF 주소는 Upstage https 도메인만 허용
 assert app.trusted_url("https://studio.upstage.ai/files/job-results/a.pdf")
@@ -45,4 +48,5 @@ app.verify = lambda lv, pdf, out: {"재판정": "하", "검증": "통과", "검�
 (app.RUNS / "r1").mkdir()
 r = app.pipeline("r1", b"%PDF", "a.pdf", lambda i: None)
 assert [o["등급"] for o in r["마스킹본"]] == ["하"] and "중 마스킹 실패" in r["비고"][0], r
+assert len(deleted) == 7   # 원본 사본도 처리 후 지운다
 print("OK")
