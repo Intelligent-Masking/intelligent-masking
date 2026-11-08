@@ -2,13 +2,14 @@
 실행: README.md 참고.  흐름: 업로드 -> 등급 에이전트 -> 등급에 따라 필요한 Mask 에이전트만 병렬 호출 -> 마스킹본 반환(순차: 하 등급은 마스킹 비용 없음).
 마스킹 PDF는 Mask 에이전트(Agents API) 출력에서 찾고, 만든 마스킹본은 등급 에이전트로 다시 판정해 목표 등급 도달을 검증한다.
 """
-import base64, json, os, re, threading, time, uuid
+import base64, json, os, re, threading, time, urllib.request, uuid
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pymupdf
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI, OpenAIError
 
@@ -24,6 +25,7 @@ AGENT_MASK_LOW = os.getenv("AGENT_MASK_LOW", "")
 # 에이전트별 config(워크플로우 버전). 비우면 에이전트의 default config = 최신 버전으로 실행된다.
 CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), (AGENT_MASK_MID, "AGENT_MASK_MID_CONFIG"), (AGENT_MASK_LOW, "AGENT_MASK_LOW_CONFIG")) if a}
 RUNS = HERE / "runs"; RUNS.mkdir(exist_ok=True)
+MAX_UPLOAD = 20 * 1024 * 1024   # 업로드 최대 20MB
 
 NEED = {"상": ["mid", "low"], "중": ["low"], "하": []}   # 입력 등급 -> 필요한 낮은 등급본
 LABEL = {"mid": "중", "low": "하"}
@@ -74,6 +76,11 @@ def parse_grade(text):
     m = re.search(r"Decision:\s*\W*([상중하])", text)
     return m.group(1) if m else None
 
+def trusted_url(s):
+    """에이전트 출력의 PDF 주소는 Upstage 도메인(https)만 내려받는다."""
+    u = urlparse(s)
+    return u.scheme == "https" and (u.hostname == "upstage.ai" or (u.hostname or "").endswith(".upstage.ai"))
+
 def find_pdf(resp, exclude_ids):
     """Mask 에이전트 출력에서 PDF 바이트를 찾는다: base64 / file id / URL. 못 찾으면 None."""
     found = []
@@ -93,8 +100,7 @@ def find_pdf(resp, exclude_ids):
             if re.fullmatch(r"file[-_]\w+", s) and s not in exclude_ids:
                 data = client().files.content(s).read()
                 if data[:4] == b"%PDF": return data
-            if s.startswith("http") and ".pdf" in s.lower():
-                import urllib.request
+            if trusted_url(s) and ".pdf" in s.lower():
                 with urllib.request.urlopen(s, timeout=60) as r: return r.read()
         except Exception:
             continue
@@ -135,20 +141,27 @@ def pipeline(rid, data, filename, stage):
     if grade is None: raise HTTPException(502, f"등급을 읽지 못했습니다: {decision[:200]}")
     exclude = set(re.findall(r"file[-_]\w+", json.dumps(g.get("output", []), ensure_ascii=False)))
 
-    need = NEED[grade]; res = {}
+    need = NEED[grade]; res, why = {}, {}   # why: 등급본을 못 만든 이유
     agents = {lv: a for lv, a in (("mid", AGENT_MASK_MID), ("low", AGENT_MASK_LOW)) if lv in need and a}
+    for lv in need:
+        if lv not in agents: why[lv] = f"AGENT_MASK_{lv.upper()} 가 .env 에 없습니다"
+    def mask(a):   # 한쪽이 실패해도 다른 쪽 결과는 살린다
+        try: return run_agent(a, uploaded), None
+        except HTTPException as e: return None, str(e.detail)
     if agents:   # 필요한 마스킹만 병렬 호출
         stage(2); ensure(agents.values())
         with ThreadPoolExecutor(len(agents)) as ex:
-            futs = {lv: ex.submit(run_agent, a, uploaded) for lv, a in agents.items()}
-            res = {lv: fu.result() for lv, fu in futs.items()}
-        for lv, r in res.items(): (out / f"raw_{lv}.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
+            futs = {lv: ex.submit(mask, a) for lv, a in agents.items()}
+        for lv, fu in futs.items():
+            r, err = fu.result()
+            if err: why[lv] = err
+            else: res[lv] = r; (out / f"raw_{lv}.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
 
     outputs, notes, pdfs = [], [], {}
     for lv in need:
         pdf = find_pdf(res[lv], exclude | set(uploaded.values())) if lv in res else None
         if pdf is None:
-            notes.append(f"{LABEL[lv]} 등급본을 만들지 못했습니다(Mask 에이전트 출력에 PDF 없음)"); continue
+            notes.append(f"{LABEL[lv]} 등급본을 만들지 못했습니다({why.get(lv, 'Mask 에이전트 출력에 PDF 없음')})"); continue
         (out / f"{lv}.pdf").write_bytes(pdf); pdfs[lv] = pdf
         outputs.append({"등급": LABEL[lv], "출처": "Studio Mask", "url": f"/runs/{rid}/{lv}.pdf"})
     if pdfs:   # 만든 마스킹본을 병렬로 다시 판정
@@ -171,7 +184,8 @@ def work(rid, data, filename):
 @app.post("/api/process")
 def process(file: UploadFile):
     if not AGENT_GRADE: raise HTTPException(500, "AGENT_GRADE 가 .env 에 없습니다")
-    data = file.file.read()
+    data = file.file.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD: raise HTTPException(413, f"파일이 너무 큽니다. {MAX_UPLOAD // 1024 // 1024}MB 이하의 PDF만 올릴 수 있습니다")
     if data[:4] != b"%PDF": raise HTTPException(400, "PDF 파일만 지원합니다")
     rid = uuid.uuid4().hex; (RUNS / rid).mkdir(); (RUNS / rid / "input.pdf").write_bytes(data)
     JOBS[rid] = {"step": 0, "done": False}
