@@ -1,8 +1,8 @@
 """문서 등급 판정 + 한 단계 낮은 마스킹본 반환 웹서비스.
-실행: 웹서비스/README.md 참고.  흐름: 업로드 -> 등급 에이전트 -> 등급에 따라 필요한 Mask 에이전트만 병렬 호출 -> 마스킹본 반환(순차: 하 등급은 마스킹 비용 없음).
-마스킹 PDF는 Agents API 출력에서 찾고, 없으면 등급 에이전트가 뽑은 값으로 로컬에서 직접 가린다(텍스트 층 있는 PDF만).
+실행: README.md 참고.  흐름: 업로드 -> 등급 에이전트 -> 등급에 따라 필요한 Mask 에이전트만 병렬 호출 -> 마스킹본 반환(순차: 하 등급은 마스킹 비용 없음).
+마스킹 PDF는 Mask 에이전트(Agents API) 출력에서 찾는다.
 """
-import base64, json, os, re, sys, threading, time, uuid
+import base64, json, os, re, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -13,7 +13,6 @@ from fastapi.staticfiles import StaticFiles
 from openai import OpenAI, OpenAIError
 
 HERE = Path(__file__).parent
-sys.path.insert(0, str(HERE.parent / "_tools"))
 
 # ---- 설정: .env (키는 코드에 쓰지 않는다) ----
 for line in (HERE / ".env").read_text(encoding="utf-8").splitlines() if (HERE / ".env").exists() else []:
@@ -22,11 +21,10 @@ for line in (HERE / ".env").read_text(encoding="utf-8").splitlines() if (HERE / 
 AGENT_GRADE = os.getenv("AGENT_GRADE", "")
 AGENT_MASK_MID = os.getenv("AGENT_MASK_MID", "")
 AGENT_MASK_LOW = os.getenv("AGENT_MASK_LOW", "")
-MASK_MODE = os.getenv("MASK_MODE", "auto")  # auto: API 우선, 실패 시 로컬 / api / local
+# 에이전트별 config(워크플로우 버전). 비우면 에이전트의 default config = 최신 버전으로 실행된다.
+CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), (AGENT_MASK_MID, "AGENT_MASK_MID_CONFIG"), (AGENT_MASK_LOW, "AGENT_MASK_LOW_CONFIG")) if a}
 RUNS = HERE / "runs"; RUNS.mkdir(exist_ok=True)
 
-UP = {"UQ", "SENS", "FIN", "AUTH"}                       # 중본에서 가리는 범주(상 정보)
-LOW_EXTRA_CORP = {"대표자명", "사업자등록번호", "법인등록번호"}  # 하본에서 추가로 가리는 법인 항목
 NEED = {"상": ["mid", "low"], "중": ["low"], "하": []}   # 입력 등급 -> 필요한 낮은 등급본
 LABEL = {"mid": "중", "low": "하"}
 
@@ -50,7 +48,8 @@ def scope(agent_id):
 def run_agent(agent_id, file_ids, timeout=600):
     proj = scope(agent_id); c = client(proj); file_id = file_ids[proj]
     body = [{"role": "user", "content": [{"type": "input_file", "file_id": file_id}]}]
-    try: r = c.responses.create(model=agent_id, include=["all"], input=body)
+    extra = {"config_id": CONFIG[agent_id]} if CONFIG.get(agent_id) else None   # shortcut: config_id 는 문서에 없는 파라미터(서버 응답으로 확인), 막히면 제거
+    try: r = c.responses.create(model=agent_id, include=["all"], input=body, extra_body=extra)
     except OpenAIError as e: raise HTTPException(502, f"에이전트 {agent_id[:12]}… 호출 실패: {e}")
     t0 = time.time()
     while r.status in {"queued", "in_progress"}:
@@ -101,25 +100,6 @@ def find_pdf(resp, exclude_ids):
             continue
     return None
 
-def local_redact(pdf_bytes, values, level):
-    """등급 에이전트가 뽑은 값(쉼표 구분)을 PDF 텍스트에서 찾아 가린다. 텍스트 층이 없으면 None."""
-    from gen_catalog import CATALOG  # 로컬 마스킹에만 필요한 등급 카탈로그
-    CAT = {n: c for c, n, *_ in CATALOG}
-    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    if not any(p.get_text().strip() for p in doc): return None
-    for name, val in values.items():
-        cat = CAT.get(name)
-        ok = cat in UP or (level == "low" and (cat in {"ID", "TXN"} or name in LOW_EXTRA_CORP))
-        if not ok or not isinstance(val, str): continue
-        for part in [p.strip() for p in val.split(",") if len(p.strip()) >= 2]:
-            for page in doc:
-                hits = page.search_for(part)
-                if not hits and " " in part:
-                    hits = [h for t in part.split() if len(t) >= 3 for h in page.search_for(t)]
-                for h in hits: page.add_redact_annot(h, fill=(0, 0, 0))
-    for page in doc: page.apply_redactions()
-    return doc.tobytes()
-
 STEPS = ["업로드", "등급 판정", "마스킹", "완료"]
 JOBS = {}   # 실행 id -> {"step": 0~3, "done": bool, "result"|"error"}  (메모리, 서버 재시작하면 사라짐)
 
@@ -135,12 +115,10 @@ def pipeline(rid, data, filename, stage):
     (out / "raw_grade.json").write_text(json.dumps(g, ensure_ascii=False, indent=1), encoding="utf-8")
     decision = step_text(g, "instruct"); grade = parse_grade(decision)
     if grade is None: raise HTTPException(502, f"등급을 읽지 못했습니다: {decision[:200]}")
-    try: values = json.loads(step_text(g, "extract"))
-    except ValueError: values = {}
     exclude = set(re.findall(r"file[-_]\w+", json.dumps(g.get("output", []), ensure_ascii=False)))
 
     need = NEED[grade]; res = {}
-    agents = {lv: a for lv, a in (("mid", AGENT_MASK_MID), ("low", AGENT_MASK_LOW)) if lv in need and a} if MASK_MODE in ("auto", "api") else {}
+    agents = {lv: a for lv, a in (("mid", AGENT_MASK_MID), ("low", AGENT_MASK_LOW)) if lv in need and a}
     if agents:   # 필요한 마스킹만 병렬 호출
         stage(2); ensure(agents.values())
         with ThreadPoolExecutor(len(agents)) as ex:
@@ -150,14 +128,11 @@ def pipeline(rid, data, filename, stage):
 
     outputs, notes = [], []
     for lv in need:
-        pdf, src = None, None
-        if lv in res: pdf = find_pdf(res[lv], exclude | set(uploaded.values())); src = "Studio Mask" if pdf else None
-        if pdf is None and MASK_MODE in ("auto", "local"):
-            pdf = local_redact(data, values, lv); src = "로컬 마스킹" if pdf else None
+        pdf = find_pdf(res[lv], exclude | set(uploaded.values())) if lv in res else None
         if pdf is None:
-            notes.append(f"{LABEL[lv]} 등급본을 만들지 못했습니다(API 출력에 PDF 없음, 텍스트 층 없는 파일은 로컬 마스킹 불가)"); continue
+            notes.append(f"{LABEL[lv]} 등급본을 만들지 못했습니다(Mask 에이전트 출력에 PDF 없음)"); continue
         (out / f"{lv}.pdf").write_bytes(pdf)
-        outputs.append({"등급": LABEL[lv], "출처": src, "url": f"/runs/{rid}/{lv}.pdf"})
+        outputs.append({"등급": LABEL[lv], "출처": "Studio Mask", "url": f"/runs/{rid}/{lv}.pdf"})
     field = lambda k: (re.search(k + r":\s*(.+)", decision) or [None, ""])[1].strip()
     stage(3)
     return {"등급": grade, "문서종": step_text(g, "classify").strip(), "근거범주": field("근거범주"), "근거항목": field("근거항목"),
