@@ -1,6 +1,6 @@
 """문서 등급 판정 + 한 단계 낮은 마스킹본 반환 웹서비스.
 실행: README.md 참고.  흐름: 업로드 -> 등급 에이전트 -> 등급에 따라 필요한 Mask 에이전트만 병렬 호출 -> 마스킹본 반환(순차: 하 등급은 마스킹 비용 없음).
-마스킹 PDF는 Mask 에이전트(Agents API) 출력에서 찾는다.
+마스킹 PDF는 Mask 에이전트(Agents API) 출력에서 찾고, 만든 마스킹본은 등급 에이전트로 다시 판정해 목표 등급 도달을 검증한다.
 """
 import base64, json, os, re, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -100,8 +100,26 @@ def find_pdf(resp, exclude_ids):
             continue
     return None
 
-STEPS = ["업로드", "등급 판정", "마스킹", "완료"]
-JOBS = {}   # 실행 id -> {"step": 0~3, "done": bool, "result"|"error"}  (메모리, 서버 재시작하면 사라짐)
+STEPS = ["업로드", "등급 판정", "마스킹", "검증", "완료"]
+JOBS = {}   # 실행 id -> {"step": 0~4, "done": bool, "result"|"error"}  (메모리, 서버 재시작하면 사라짐)
+
+RANK = {"하": 0, "중": 1, "상": 2}
+
+def verify(lv, pdf, out):
+    """마스킹본을 등급 에이전트에 다시 넣어 목표 등급과 비교한다(통과 = 목표와 정확히 같음). 실패해도 전체 흐름은 막지 않는다."""
+    target = LABEL[lv]
+    try:
+        proj = scope(AGENT_GRADE)
+        fid = client(proj).files.create(file=(f"{lv}.pdf", pdf), purpose="user_data").id
+        g = run_agent(AGENT_GRADE, {proj: fid})
+        (out / f"raw_regrade_{lv}.json").write_text(json.dumps(g, ensure_ascii=False, indent=1), encoding="utf-8")
+        got = parse_grade(step_text(g, "instruct"))
+    except Exception:
+        got = None
+    if got is None: return {"재판정": None, "검증": "불가", "검증메모": "재판정 결과를 읽지 못했습니다. 마스킹본을 직접 확인해 주세요."}
+    if got == target: return {"재판정": got, "검증": "통과", "검증메모": f"재판정 {got} 등급 · 목표 등급에 도달했습니다."}
+    if RANK[got] > RANK[target]: return {"재판정": got, "검증": "미달", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 높습니다. 마스킹이 덜 됐을 수 있습니다."}
+    return {"재판정": got, "검증": "과마스킹", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 낮습니다. 필요 이상으로 가려졌을 수 있습니다."}
 
 def pipeline(rid, data, filename, stage):
     t0 = time.time(); out = RUNS / rid
@@ -126,15 +144,20 @@ def pipeline(rid, data, filename, stage):
             res = {lv: fu.result() for lv, fu in futs.items()}
         for lv, r in res.items(): (out / f"raw_{lv}.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    outputs, notes = [], []
+    outputs, notes, pdfs = [], [], {}
     for lv in need:
         pdf = find_pdf(res[lv], exclude | set(uploaded.values())) if lv in res else None
         if pdf is None:
             notes.append(f"{LABEL[lv]} 등급본을 만들지 못했습니다(Mask 에이전트 출력에 PDF 없음)"); continue
-        (out / f"{lv}.pdf").write_bytes(pdf)
+        (out / f"{lv}.pdf").write_bytes(pdf); pdfs[lv] = pdf
         outputs.append({"등급": LABEL[lv], "출처": "Studio Mask", "url": f"/runs/{rid}/{lv}.pdf"})
+    if pdfs:   # 만든 마스킹본을 병렬로 다시 판정
+        stage(3)
+        with ThreadPoolExecutor(len(pdfs)) as ex:
+            checks = {lv: ex.submit(verify, lv, b, out) for lv, b in pdfs.items()}
+        for o, lv in zip(outputs, pdfs): o.update(checks[lv].result())
     field = lambda k: (re.search(k + r":\s*(.+)", decision) or [None, ""])[1].strip()
-    stage(3)
+    stage(4)
     return {"등급": grade, "문서종": step_text(g, "classify").strip(), "근거범주": field("근거범주"), "근거항목": field("근거항목"),
             "마스킹본": outputs, "비고": notes, "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
 
