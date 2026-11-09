@@ -88,16 +88,36 @@ function showSteps(current,done=false){
 }
 function fail(message){setBusy(false);$('progress').classList.remove('processing');$('progress-title').textContent='분석을 완료하지 못했어요';$('progress-message').textContent='아래 안내를 확인하고 다시 시도해 주세요.';$('hint').textContent='파일을 확인한 뒤 다시 분석할 수 있습니다.';showError(message);}
 function safePdfUrl(value){if(typeof value!=='string'||!/^\/runs\/[0-9a-f]{32}\/(input|mid|low)\.pdf$/.test(value))throw Error('결과 문서 주소를 확인할 수 없습니다.');return value;}
+const docCard=(title,target,url,isOriginal,check)=>{url=safePdfUrl(url);if(!['상','중','하'].includes(target))throw Error('마스킹 목표 등급을 확인할 수 없습니다.');return `<article class="document-card"><div class="doc-top"><h4>${esc(title)}</h4><span class="doc-tag g-${target}">${isOriginal?'원본':'목표'} ${target} 등급</span></div><div class="doc-preview"><img src="${url}/preview" alt="${esc(title)} 첫 페이지 미리보기" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="preview-error" hidden>미리보기를 표시할 수 없습니다.<br>아래 ‘크게 보기’로 문서를 열어 주세요.</p><span class="preview-caption">첫 페이지 미리보기</span></div>${check?`<p class="doc-verify ${check['검증']==='통과'?'':check['검증']==='불가'||check['검증']==='과마스킹'?'warn':'bad'}">${esc(check['검증메모'])}</p>`:''}<div class="doc-actions"><a href="${url}" target="_blank" rel="noopener noreferrer">${icon('open')}크게 보기</a><a class="download" href="${url}?download=1">${icon('download')}PDF 다운로드</a></div></article>`;};
+function showOut(){
+ $('out').classList.remove('hide');$('hint').textContent='분석이 완료됐어요. 원본과 마스킹본을 확인해 주세요.';$('out').focus({preventScroll:true});$('out').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
+}
+function renderCombined(result){
+ const docs=result['문서들'],top=result['등급'];if(!['상','중','하'].includes(top)||!Array.isArray(docs))throw Error('문서 등급을 확인할 수 없습니다.');
+ $('grid').className='';
+ $('grid').innerHTML=docs.map((d,i)=>{
+  const head=`문서 ${i+1} · ${esc(d['쪽'])}쪽`;
+  if(d['오류'])return `<section><div class="documents-heading"><h3>${head}</h3><span>처리하지 못했습니다</span></div><div class="error">${esc(d['오류'])}</div></section>`;
+  const outs=Array.isArray(d['마스킹본'])?d['마스킹본']:[];
+  const cards=docCard('원본 문서',d['등급'],d['원본url'],true)+outs.map(o=>docCard(o['등급']+' 등급 마스킹본',o['등급'],o['url'],false,o['검증메모']?o:null)).join('');
+  const notes=(Array.isArray(d['비고'])?d['비고']:[]).map(n=>`<div class="note">${esc(n)}</div>`).join('');
+  return `<section><div class="documents-heading"><h3>${head} · ${esc(d['문서종']||'문서 유형 미확인')} · ${esc(d['등급'])} 등급</h3><span>${esc(d['근거항목']||'')}</span></div>${notes}<div class="documents${outs.length<2?' two-columns':''}">${cards}</div></section>`;
+ }).join('');
+ $('grade-value').textContent=top;$('badge').className='result-grade g-'+top;
+ $('dtype').textContent=`결합 문서 · ${docs.length}건`;$('result-description').textContent='여러 문서가 결합된 파일입니다. 문서별로 등급을 판정하고 마스킹했습니다. 가장 높은 등급이 전체 등급입니다.';
+ $('cats').innerHTML='';$('items').innerHTML='';$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
+ $('notes').innerHTML='';$('no-mask').classList.add('hide');showOut();
+}
 function render(result){
+ if(result['결합'])return renderCombined(result);
  const grade=result['등급'];if(!['상','중','하'].includes(grade))throw Error('문서 등급을 확인할 수 없습니다.');
  const original=safePdfUrl(result['원본url']);const outputs=Array.isArray(result['마스킹본'])?result['마스킹본']:[];
- const card=(title,target,url,isOriginal,check)=>{url=safePdfUrl(url);if(!['상','중','하'].includes(target))throw Error('마스킹 목표 등급을 확인할 수 없습니다.');return `<article class="document-card"><div class="doc-top"><h4>${esc(title)}</h4><span class="doc-tag g-${target}">${isOriginal?'원본':'목표'} ${target} 등급</span></div><div class="doc-preview"><img src="${url}/preview" alt="${esc(title)} 첫 페이지 미리보기" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="preview-error" hidden>미리보기를 표시할 수 없습니다.<br>아래 ‘크게 보기’로 문서를 열어 주세요.</p><span class="preview-caption">첫 페이지 미리보기</span></div>${check?`<p class="doc-verify ${check['검증']==='통과'?'':check['검증']==='불가'||check['검증']==='과마스킹'?'warn':'bad'}">${esc(check['검증메모'])}</p>`:''}<div class="doc-actions"><a href="${url}" target="_blank" rel="noopener noreferrer">${icon('open')}크게 보기</a><a class="download" href="${url}?download=1">${icon('download')}PDF 다운로드</a></div></article>`;};
- let html=card('원본 문서',grade,original,true);for(const output of outputs)html+=card(output['등급']+' 등급 마스킹본',output['등급'],output['url'],false,output['검증메모']?output:null);
- $('grid').innerHTML=html;$('grid').classList.toggle('two-columns',outputs.length<2);$('grade-value').textContent=grade;$('badge').className='result-grade g-'+grade;
+ let html=docCard('원본 문서',grade,original,true);for(const output of outputs)html+=docCard(output['등급']+' 등급 마스킹본',output['등급'],output['url'],false,output['검증메모']?output:null);
+ $('grid').className='documents';$('grid').innerHTML=html;$('grid').classList.toggle('two-columns',outputs.length<2);$('grade-value').textContent=grade;$('badge').className='result-grade g-'+grade;
  $('dtype').textContent=result['문서종']||'문서 유형 미확인';$('result-description').textContent={상:'민감정보가 포함되어 있어 공유 전 마스킹이 필요합니다.',중:'개인정보 또는 거래 신청 정보가 포함되어 있습니다.',하:'상·중 등급에 해당하는 정보가 확인되지 않았습니다.'}[grade];
  chips(result['근거범주'],$('cats'));chips(result['근거항목'],$('items'));$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
  const notes=Array.isArray(result['비고'])?result['비고']:[];$('notes').innerHTML=notes.map(n=>`<div class="note">${esc(n)}</div>`).join('');$('no-mask').classList.toggle('hide',grade!=='하'||outputs.length>0||notes.length>0);
- $('out').classList.remove('hide');$('hint').textContent='분석이 완료됐어요. 원본과 마스킹본을 확인해 주세요.';$('out').focus({preventScroll:true});$('out').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
+ showOut();
 }
 $('reset').onclick=()=>{if(busy)return;selectFile(null);$('out').classList.add('hide');$('progress').classList.add('hide');$('grid').replaceChildren();drop.focus();drop.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});};
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));

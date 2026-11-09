@@ -22,8 +22,9 @@ for line in (HERE / ".env").read_text(encoding="utf-8").splitlines() if (HERE / 
 AGENT_GRADE = os.getenv("AGENT_GRADE", "")
 AGENT_MASK_MID = os.getenv("AGENT_MASK_MID", "")
 AGENT_MASK_LOW = os.getenv("AGENT_MASK_LOW", "")
+AGENT_SPLIT = os.getenv("AGENT_SPLIT", "")   # 필수. 모든 문서는 먼저 분할 에이전트를 거쳐야 한 문서인지 여러 문서인지 알 수 있다.
 # 에이전트별 config(워크플로우 버전). 비우면 에이전트의 default config = 최신 버전으로 실행된다.
-CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), (AGENT_MASK_MID, "AGENT_MASK_MID_CONFIG"), (AGENT_MASK_LOW, "AGENT_MASK_LOW_CONFIG")) if a}
+CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), (AGENT_MASK_MID, "AGENT_MASK_MID_CONFIG"), (AGENT_MASK_LOW, "AGENT_MASK_LOW_CONFIG"), (AGENT_SPLIT, "AGENT_SPLIT_CONFIG")) if a}
 RUNS = HERE / "runs"; RUNS.mkdir(exist_ok=True)
 MAX_UPLOAD = 20 * 1024 * 1024   # 업로드 최대 20MB
 
@@ -135,13 +136,14 @@ def verify(lv, pdf, out):
     if RANK[got] > RANK[target]: return {"재판정": got, "검증": "미달", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 높습니다. 마스킹이 덜 됐을 수 있습니다."}
     return {"재판정": got, "검증": "과마스킹", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 낮습니다. 필요 이상으로 가려졌을 수 있습니다."}
 
-def pipeline(rid, data, filename, stage):
+def run_doc(rid, data, filename, stage, name=""):
+    """문서 한 건: 등급 판정 -> 필요한 마스킹 -> 재판정 검증. name = 분할 에이전트가 붙인 문서 이름(화면의 문서종)."""
     uploaded = {}   # 프로젝트 -> 올린 원본 file id. 끝나면(실패해도) Upstage에서 지운다
-    try: return _pipeline(rid, data, filename, stage, uploaded)
+    try: return _pipeline(rid, data, filename, stage, uploaded, name)
     finally:
         for pj, fid in uploaded.items(): drop_file(pj, fid)
 
-def _pipeline(rid, data, filename, stage, uploaded):
+def _pipeline(rid, data, filename, stage, uploaded, name):
     t0 = time.time(); out = RUNS / rid
     def ensure(agent_ids):   # 에이전트 소속(프로젝트)마다 파일을 한 번씩 올린다
         for pj in {scope(a) for a in agent_ids}:
@@ -184,8 +186,71 @@ def _pipeline(rid, data, filename, stage, uploaded):
         for o, lv in zip(outputs, pdfs): o.update(checks[lv].result())
     field = lambda k: (re.search(k + r":\s*(.+)", decision) or [None, ""])[1].strip()
     stage(4)
-    return {"등급": grade, "문서종": step_text(g, "classify").strip(), "근거범주": field("근거범주"), "근거항목": field("근거항목"),
+    return {"등급": grade, "문서종": name,"근거범주": field("근거범주"), "근거항목": field("근거항목"),
             "마스킹본": outputs, "비고": notes, "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
+
+def parse_split(resp, n):
+    """분할 응답(document-classify 단계의 content 항목 = 문서 1건)에서 쪽 범위를 읽는다.
+    각 항목의 additional_values(JSON 문자열)에 page_ranges [[시작, 끝], ...] (1부터, 끝 포함)가 있다.
+    문서마다 (문서 이름, [(시작, 끝), ...]) (쪽은 0부터)로 바꿔 첫 쪽 순서로 돌려준다. 문서 이름 = content 의 text(분류 결과).
+    문서들이 n쪽을 빠짐·겹침 없이 덮을 때만 유효(1개 = 한 문서). 아니면 None."""
+    docs = []
+    for it in resp["output"]:
+        if it.get("step_type") != "document-classify": continue
+        for c in it.get("content", []):
+            try:
+                av = c["additional_values"]; av = json.loads(av) if isinstance(av, str) else av
+                pr = av.get("page_ranges")   # 나뉘지 않은 한 문서는 쪽 범위 없이 분류만 온다
+                docs.append((None if pr is None else sorted((int(a) - 1, int(b) - 1) for a, b in pr), (c.get("text") or "").strip()))
+            except (AttributeError, KeyError, TypeError, ValueError): return None
+    if len(docs) == 1 and docs[0][0] is None: docs = [([(0, n - 1)], docs[0][1])]
+    if any(d is None for d, _ in docs): return None
+    docs.sort()
+    pages = sorted(p for d, _ in docs for a, b in d for p in range(a, b + 1))
+    ok = docs and all(d and all(a <= b for a, b in d) for d, _ in docs) and pages == list(range(n))
+    return [(name, d) for d, name in docs] if ok else None
+
+def split_docs(rid, data, filename):
+    """모든 문서를 분할 에이전트에 먼저 태워 문서 단위 쪽 범위(1개 이상)를 얻는다. 분할을 못 하면 한 문서로 추측하지 않고 실패시킨다."""
+    fid = proj = None
+    try:
+        with pymupdf.open(stream=data, filetype="pdf") as d: n = len(d)
+        proj = scope(AGENT_SPLIT); fid = client(proj).files.create(file=(filename, data), purpose="user_data").id
+        r = run_agent(AGENT_SPLIT, {proj: fid})
+        (RUNS / rid / "raw_split.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
+        segs = parse_split(r, n)
+    except Exception as e:
+        raise HTTPException(502, f"문서 분할에 실패했습니다: {str(getattr(e, 'detail', e))[:200]}")
+    finally:
+        if fid: drop_file(proj, fid)
+    if segs is None: raise HTTPException(502, "문서 분할 결과를 읽지 못했습니다. runs/<id>/raw_split.json 의 응답 형식을 확인하세요.")
+    return segs
+
+def cut(data, ranges):
+    with pymupdf.open(stream=data, filetype="pdf") as src, pymupdf.open() as dst:
+        for a, b in ranges: dst.insert_pdf(src, from_page=a, to_page=b)
+        return dst.tobytes()
+
+def pipeline(rid, data, filename, stage):
+    """분할 -> (문서마다 run_doc). 분할 결과가 한 문서면 원본 그대로 예전 결과 형태, 여러 문서면 {"결합": True, "문서들": [...]} (문서마다 자기 실행 폴더)."""
+    t0 = time.time(); segs = split_docs(rid, data, filename)
+    if len(segs) == 1: return run_doc(rid, data, filename, stage, segs[0][0])
+    hi = [0]
+    def step(i): hi[0] = max(hi[0], i); stage(hi[0])   # 문서들이 병렬이라 진행 단계는 가장 앞선 값을 쓴다
+    def one(k, seg):
+        name, ranges = seg; sid = uuid.uuid4().hex; (RUNS / sid).mkdir()
+        try:
+            pdf = cut(data, ranges); (RUNS / sid / "input.pdf").write_bytes(pdf)
+            r = run_doc(sid, pdf, f"{Path(filename).stem}_{k}.pdf", step, name)
+        except HTTPException as e: r = {"오류": str(e.detail)}
+        except Exception as e: r = {"오류": f"{type(e).__name__}: {e}"}
+        r["쪽"] = ",".join(f"{a + 1}-{b + 1}" if b > a else str(a + 1) for a, b in ranges)
+        return r
+    with ThreadPoolExecutor(min(len(segs), 3)) as ex: docs = list(ex.map(one, range(1, len(segs) + 1), segs))
+    ok = [d["등급"] for d in docs if "등급" in d]
+    if not ok: raise HTTPException(502, "분할한 문서를 모두 처리하지 못했습니다: " + "; ".join(d["오류"] for d in docs)[:300])
+    stage(4)
+    return {"결합": True, "등급": max(ok, key=RANK.get), "문서들": docs, "비고": [], "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
 
 def work(rid, data, filename):
     job = JOBS[rid]
@@ -197,6 +262,7 @@ def work(rid, data, filename):
 @app.post("/api/process")
 def process(file: UploadFile):
     if not AGENT_GRADE: raise HTTPException(500, "AGENT_GRADE 가 .env 에 없습니다")
+    if not AGENT_SPLIT: raise HTTPException(500, "AGENT_SPLIT 가 .env 에 없습니다")
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD: raise HTTPException(413, f"파일이 너무 큽니다. {MAX_UPLOAD // 1024 // 1024}MB 이하의 PDF만 올릴 수 있습니다")
     if data[:4] != b"%PDF": raise HTTPException(400, "PDF 파일만 지원합니다")

@@ -79,6 +79,7 @@ UPSTAGE_API_KEY=발급받은_API_키
 | `AGENT_GRADE` | 문서 분류·정보 추출·등급 판정 에이전트 |
 | `AGENT_MASK_MID` | 중 등급 목표 마스킹 에이전트 |
 | `AGENT_MASK_LOW` | 하 등급 목표 마스킹 에이전트 |
+| `AGENT_SPLIT` | 필수. 모든 업로드가 가장 먼저 거치는 문서 분할(Classify Split) 에이전트. 결과가 한 문서면 그대로, 2건 이상이면 문서마다 등급 판정·마스킹·검증을 각각 수행. 분할 실패 시 한 문서로 추측하지 않고 오류 처리 |
 | `AGENT_*_CONFIG` | 선택. 에이전트별 워크플로우 버전. Studio의 버전 번호(예: `7`). 비우면 default(최신) 버전 |
 
 자신의 Studio 워크플로우를 사용하려면 Agent ID 3개도 변경합니다. API 키는 `.env`에만 저장하며 Git에 올리지 않습니다.
