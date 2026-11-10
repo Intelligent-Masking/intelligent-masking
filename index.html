@@ -158,7 +158,16 @@ go.onclick=async()=>{
  if(!file||busy)return;clearDocuments();setBusy(true);$('err').classList.add('hide');$('out').classList.add('hide');$('hint').textContent='분석이 끝날 때까지 이 화면을 유지해 주세요.';showSteps(0);
  const body=new FormData();body.append('file',file);
  try{
-  const response=await fetch('/api/process',{method:'POST',body});if(response.ok&&response.headers.get('content-type')?.includes('application/x-ndjson')){await readAnalysisStream(response);setBusy(false);return;}const started=await response.json().catch(()=>({detail:response.status===413?'파일이 너무 큽니다. 더 작은 PDF를 선택해 주세요.':'문서를 업로드하지 못했습니다.'}));if(!response.ok)throw Error(typeof started.detail==='string'?started.detail:'문서를 업로드하지 못했습니다. 다시 시도해 주세요.');
+  let endpoint='/api/process',requestBody=body,started;
+  while(true){
+   const response=await fetch(endpoint,{method:'POST',body:requestBody});
+   if(response.ok&&response.headers.get('content-type')?.includes('application/x-ndjson')){await readAnalysisStream(response);setBusy(false);return;}
+   started=await response.json().catch(()=>({detail:response.status===413?'파일이 너무 큽니다. 더 작은 PDF를 선택해 주세요.':'문서를 업로드하지 못했습니다.'}));
+   if(!response.ok)throw Error(typeof started.detail==='string'?started.detail:'문서 분석을 완료하지 못했습니다.');
+   if(!started.ticket)break;
+   showSteps(started.step||0);await pause(started.requiresFile?0:3000);
+   endpoint='/api/continue';requestBody=new FormData();requestBody.append('ticket',started.ticket);if(started.requiresFile)requestBody.append('file',file);
+  }
   if(!/^[0-9a-f]{32}$/.test(started.run))throw Error('분석 작업을 확인할 수 없습니다. 다시 시도해 주세요.');
   while(true){await pause(1500);const response=await fetch('/api/status/'+started.run);const status=await response.json();if(!response.ok)throw Error(typeof status.detail==='string'?status.detail:'진행 상태를 확인하지 못했습니다.');if(status.error)throw Error(status.error);showSteps(status.step,status.done);if(status.done){render(status.result);setBusy(false);break;}}
  }catch(error){fail(error instanceof TypeError?'서버에 연결하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.':error.message||'분석 중 문제가 발생했습니다. 다시 시도해 주세요.');}

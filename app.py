@@ -9,8 +9,8 @@ from pathlib import Path
 import sys
 
 import pymupdf
-from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from fastapi import FastAPI, HTTPException, UploadFile, Form
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI, OpenAIError
 
@@ -42,6 +42,7 @@ def client(project=None):
     if project not in _clients:
         if not os.getenv("UPSTAGE_API_KEY"): raise HTTPException(500, "UPSTAGE_API_KEY 가 .env 에 없습니다")
         _clients[project] = OpenAI(api_key=os.environ["UPSTAGE_API_KEY"], base_url="https://api.upstage.ai/v2",
+                                  timeout=60 if CLOUD else 600, max_retries=1 if CLOUD else 2,
                                   default_headers={"x-project-id": project} if project else None)
     return _clients[project]
 
@@ -287,12 +288,21 @@ def process(file: UploadFile):
     if data[:4] != b"%PDF": raise HTTPException(400, "PDF 파일만 지원합니다")
     rid = uuid.uuid4().hex; (RUNS / rid).mkdir(); (RUNS / rid / "input.pdf").write_bytes(data)
     if CLOUD:
-        from cloud_stream import stream_results
-        return StreamingResponse(stream_results(sys.modules[__name__], rid, data, file.filename or "input.pdf"),
-                                 media_type="application/x-ndjson", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+        from cloud_jobs import start
+        try: return start(sys.modules[__name__], data, file.filename or "input.pdf")
+        finally:
+            import shutil
+            shutil.rmtree(RUNS / rid, ignore_errors=True)
     JOBS[rid] = {"step": 0, "done": False}
     threading.Thread(target=work, args=(rid, data, file.filename or "input.pdf"), daemon=True).start()
     return {"run": rid, "steps": STEPS}
+
+@app.post("/api/continue")
+def continue_analysis(ticket: str = Form(...), file: UploadFile | None = None):
+    from cloud_jobs import advance
+    data = file.file.read(MAX_UPLOAD + 1) if file else None
+    if data is not None and len(data) > MAX_UPLOAD: raise HTTPException(413, "PDF 크기는 4.4MB 이하여야 합니다.")
+    return advance(sys.modules[__name__], ticket, data)
 
 @app.get("/api/status/{rid}")
 def status(rid: str):
@@ -311,13 +321,13 @@ def get_run(rid: str, name: str, download: int = 0):
 def index():
     html = (HERE / "index.html").read_text(encoding="utf-8")
     if CLOUD:
-        html = html.replace("PDF 파일 지원 · 여러 페이지 문서도 가능", "PDF 최대 4.4MB · 여러 페이지 문서도 가능")
+        html = html.replace("PDF 파일 지원 · 여러 페이지 문서도 가능", "PDF 최대 4.4MB · 분석 최대 20분")
         html = html.replace("선택한 문서는 분석을 위해 Upstage로 전송되며, 원본과 결과는 분석 서버에 저장됩니다.", "선택한 문서는 분석을 위해 Upstage로 전송됩니다. 완료된 PDF는 이 화면에서 다운로드하며, 처리된 서버 임시 파일은 정리됩니다.")
     return html.replace("</head>", f"<script>window.IM_MAX_UPLOAD={MAX_UPLOAD};</script></head>")
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "mode": "stream" if CLOUD else "poll", "maxUploadBytes": MAX_UPLOAD,
+    return {"status": "ok", "mode": "resumable" if CLOUD else "poll", "maxUploadBytes": MAX_UPLOAD,
             "configured": bool(os.getenv("UPSTAGE_API_KEY") and AGENT_GRADE and AGENT_SPLIT and AGENT_MASK_MID and AGENT_MASK_LOW)}
 
 @app.get("/runs/{rid}/{name}/preview")
