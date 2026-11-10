@@ -1,0 +1,254 @@
+{
+  "kind": "studio.workflow-config-draft",
+  "schemaVersion": 4,
+  "exportedAt": "2026-11-10T04:59:29.934Z",
+  "exportedFrom": {
+    "workflowId": "agt_Vz5tWfeyE9ctihjXJhztha",
+    "workflowName": "마스킹-하(서비스에 적용됨)",
+    "configId": "cfg_ii9vbtgeeAZybM5naiqYZb",
+    "configVer": 2
+  },
+  "workflowConfig": {
+    "workflow_name": "마스킹-하(서비스에 적용됨)",
+    "pipelineType": "extract",
+    "documentParseConfiguration": {
+      "modelName": "document-parse",
+      "mode": "standard",
+      "ocrMode": "force",
+      "lang": "",
+      "chartRecognition": false,
+      "coordinates": true,
+      "mergeMultipageTables": false,
+      "outputFormats": [
+        "html",
+        "text"
+      ],
+      "base64Encoding": [
+        "figure"
+      ]
+    },
+    "informationExtractConfiguration": {
+      "modelName": "",
+      "schemas": [
+        {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "마스킹_하본",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "고유식별번호": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 주민등록번호 13자리 전체, 외국인등록번호, 여권번호, 운전면허번호. 앞 6자리만 적힌 생년월일은 제외."
+                },
+                "해외납세자번호": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 해외 납세자번호(TIN, SSN, EIN 등)."
+                },
+                "건강장애정보": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 질병·진단·요양·의료 사유, 장애 여부·등급으로 기재된 문구."
+                },
+                "회생파산정보": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 개인회생·파산 선고·결정 관련으로 기재된 문구."
+                },
+                "계좌번호": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 은행 계좌번호 전체(계좌·입금·출금·결제·수령계좌 라벨 칸). 납부자번호·고객번호는 제외."
+                },
+                "카드번호": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 카드번호."
+                },
+                "잔액·지급제한금액": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 계좌 잔액, 지급제한·질권 금액, 미결제 타점권 금액."
+                },
+                "대출·담보정보": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 대출 금액·부채 금액, 담보 종류·증서번호·담보 금액."
+                },
+                "소득·재산·매출금액": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 연간소득, 재산·자산 규모, 금융자산 비율, 직전연도 매출액의 금액 또는 구간 문구."
+                },
+                "신용점수": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 신용점수 숫자나 구간 문구."
+                },
+                "급여·퇴직금": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 급여·임금·기준급여 금액, 퇴직금 예상액, 중간정산 금액."
+                },
+                "의료비·보험보상금": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 본인부담 의료비 금액, 보험 보상금액, 보험회사명."
+                },
+                "보유상품·투자성향": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 기존 보유 금융상품명·상품계좌번호·매도 금액, 투자성향 분석결과."
+                },
+                "인증정보": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 인터넷뱅킹 ID, 비밀번호, 보안카드·OTP 번호, 인증서 비밀값."
+                },
+                "서명날인란성명": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 서명·날인 칸의 서명자 이름과, 도장(붉은 원형 인영) 안에 적힌 글자. 도장 이미지 전체를 가린다. 인쇄된 '(인/서명)' 라벨은 제외."
+                },
+                "성명": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 개인의 한글 성명(신청인·대리인·보증인·가족·직원 등). 법인명·상호는 제외."
+                },
+                "영문성명": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 개인의 영문 성명."
+                },
+                "생년월일": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 생년월일, 주민등록번호 앞 6자리."
+                },
+                "휴대폰·전화번호": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 개인 휴대폰·자택·직장 전화번호. 회사 대표전화는 제외."
+                },
+                "이메일": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 개인 이메일 주소. 회사 대표 이메일은 제외."
+                },
+                "주소": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 개인 자택 주소(영문 주소 포함). 사업장 주소는 제외."
+                },
+                "국적·직장정보": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 국적, 조세목적상 거주국, 직장명·부서·직위."
+                },
+                "신청상품·희망금액": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 신청 상품·서비스명, 희망 금액·한도·운용비율·목표수익률."
+                },
+                "이체·납부정보": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 수취인, 납부자번호, 이체일, 수납기관, 기관코드."
+                },
+                "조회발급기간·변경내용": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 발급 대상 기간·기준일, 변경 전·후 연락처·주소 값."
+                },
+                "대표자·사업자번호": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "문서에서 다음 값을 모두 찾아 문자열 배열로 반환한다. 없으면 빈 배열. 대표자 성명, 사업자등록번호, 법인등록번호."
+                }
+              }
+            }
+          },
+          "mode": "standard",
+          "modelName": "",
+          "manyRows": true,
+          "manyRowsThreshold": 50,
+          "manyRowsMaxRowsPerBatch": 400,
+          "manyRowsMaxConcurrent": 5,
+          "extractType": "masking",
+          "nodeMode": "mask",
+          "maskOutputFormat": [
+            "pdf",
+            "image"
+          ]
+        }
+      ],
+      "categorySchemaMapping": {}
+    },
+    "pipelineEdges": [
+      {
+        "id": "e0",
+        "source": {
+          "nodeType": "parse"
+        },
+        "target": {
+          "nodeType": "extract",
+          "name": "마스킹_하본"
+        }
+      }
+    ]
+  }
+}

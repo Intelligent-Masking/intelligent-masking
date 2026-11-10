@@ -1,0 +1,379 @@
+{
+  "task": "금융 문서 개인정보 위험도 등급화 및 예외 판정",
+  "unit": "입력 PDF 파일 1개 = 케이스 1건. 단일 서식 PDF는 판정 1건이다. 결합 PDF는 서비스가 서식별로 분할해 문서별로 판정하며, 파일 단위 판정은 등급이 나온 문서 중 가장 높은 등급으로 기록하고 문서별 판정은 answer.문서별에 기재한다.",
+  "output_keys": [
+    "판정"
+  ],
+  "decision_values": [
+    "상",
+    "중",
+    "하",
+    "필수값 누락",
+    "추가 확인 필요",
+    "지원하지 않는 유형의 문서"
+  ],
+  "cases": [
+    {
+      "case_id": "C01",
+      "file": "Intelligent Masking_최종제출_set01.pdf",
+      "documents": [
+        "확정급여형(DB) 퇴직연금 가입자명부 일괄변경신청서"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C02",
+      "file": "Intelligent Masking_최종제출_set02.pdf",
+      "documents": [
+        "FATCA/CRS 본인확인서(개인용)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C03",
+      "file": "Intelligent Masking_최종제출_set03.pdf",
+      "documents": [
+        "FATCA/CRS 본인확인서(법인·단체용)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C04",
+      "file": "Intelligent Masking_최종제출_set04.pdf",
+      "documents": [
+        "기업카드 가입신청서"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C05",
+      "file": "Intelligent Masking_최종제출_set05.pdf",
+      "documents": [
+        "대출거래약정서(가계용, 은행용·고객용)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C06",
+      "file": "Intelligent Masking_최종제출_set06.pdf",
+      "documents": [
+        "보유상품변경(스위칭) 신청서(공통)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C07",
+      "file": "Intelligent Masking_최종제출_set07.pdf",
+      "documents": [
+        "신용카드 개인회원 가입신청서"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C08",
+      "file": "Intelligent Masking_최종제출_set08.pdf",
+      "documents": [
+        "잔액증명발급의뢰서(한글·영문)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C09",
+      "file": "Intelligent Masking_최종제출_set09.pdf",
+      "documents": [
+        "제로페이 가맹점 가입신청서(개인사업자용)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C10",
+      "file": "Intelligent Masking_최종제출_set10.pdf",
+      "documents": [
+        "퇴직연금 중도인출 신청서(DC/IRP)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C11",
+      "file": "Intelligent Masking_최종제출_set11.pdf",
+      "documents": [
+        "투자자정보 확인서(설문지·분석 결과표 포함)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C12",
+      "file": "Intelligent Masking_최종제출_set12.pdf",
+      "documents": [
+        "고객 연락처 변경 의뢰서"
+      ],
+      "answer": {
+        "판정": "지원하지 않는 유형의 문서"
+      }
+    },
+    {
+      "case_id": "C13",
+      "file": "Intelligent Masking_최종제출_set13.pdf",
+      "documents": [
+        "정기이체 및 요금납부 등록신청서"
+      ],
+      "answer": {
+        "판정": "지원하지 않는 유형의 문서"
+      }
+    },
+    {
+      "case_id": "C14",
+      "file": "Intelligent Masking_최종제출_set14.pdf",
+      "documents": [
+        "잔액증명서 발급 신청서"
+      ],
+      "answer": {
+        "판정": "지원하지 않는 유형의 문서"
+      }
+    },
+    {
+      "case_id": "C15",
+      "file": "Intelligent Masking_최종제출_set15.pdf",
+      "documents": [
+        "퇴직연금 중도인출 신청서(DC/IRP)",
+        "일일 환율동향 FAX수신서비스 신청서",
+        "제증명서 등의 발급의뢰서",
+        "신용카드 개인회원 가입신청서"
+      ],
+      "answer": {
+        "판정": "상",
+        "문서별": [
+          {
+            "document": "퇴직연금 중도인출 신청서(DC/IRP)",
+            "판정": "상"
+          },
+          {
+            "document": "일일 환율동향 FAX수신서비스 신청서",
+            "판정": "필수값 누락"
+          },
+          {
+            "document": "제증명서 등의 발급의뢰서",
+            "판정": "필수값 누락"
+          },
+          {
+            "document": "신용카드 개인회원 가입신청서",
+            "판정": "필수값 누락"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "C16",
+      "file": "Intelligent Masking_최종제출_set16.pdf",
+      "documents": [
+        "개인형IRP 신규 신청서",
+        "입금시 매수상품등록 신청서(공통)",
+        "보유상품변경(스위칭) 신청서(공통)",
+        "퇴직연금 중도인출 신청서(DC/IRP)"
+      ],
+      "answer": {
+        "판정": "상",
+        "문서별": [
+          {
+            "document": "개인형IRP 신규 신청서",
+            "판정": "필수값 누락"
+          },
+          {
+            "document": "입금시 매수상품등록 신청서(공통)",
+            "판정": "필수값 누락"
+          },
+          {
+            "document": "보유상품변경(스위칭) 신청서(공통)",
+            "판정": "추가 확인 필요"
+          },
+          {
+            "document": "퇴직연금 중도인출 신청서(DC/IRP)",
+            "판정": "상"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "C17",
+      "file": "Intelligent Masking_최종제출_set17.pdf",
+      "documents": [
+        "기업카드 가입신청서(저품질 스캔)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C18",
+      "file": "Intelligent Masking_최종제출_set18.pdf",
+      "documents": [
+        "보유상품변경(스위칭) 신청서(저품질 스캔)"
+      ],
+      "answer": {
+        "판정": "추가 확인 필요"
+      }
+    },
+    {
+      "case_id": "C19",
+      "file": "Intelligent Masking_최종제출_set19.pdf",
+      "documents": [
+        "사용인감계(전자금융용, 저품질 스캔)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C20",
+      "file": "Intelligent Masking_최종제출_set20.pdf",
+      "documents": [
+        "입금시 매수상품등록 신청서(저품질 스캔)"
+      ],
+      "answer": {
+        "판정": "상"
+      }
+    },
+    {
+      "case_id": "C21",
+      "file": "Intelligent Masking_최종제출_set21.pdf",
+      "documents": [
+        "전자금융 이용신청서(은행용, 저품질 스캔)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C22",
+      "file": "Intelligent Masking_최종제출_set22.pdf",
+      "documents": [
+        "제증명서 등의 발급의뢰서(저품질 스캔)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C23",
+      "file": "Intelligent Masking_최종제출_set23.pdf",
+      "documents": [
+        "개인형IRP 신규 신청서"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C24",
+      "file": "Intelligent Masking_최종제출_set24.pdf",
+      "documents": [
+        "목표수익률 등록 신청서(공통)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C25",
+      "file": "Intelligent Masking_최종제출_set25.pdf",
+      "documents": [
+        "사용인감계(전자금융용, 공개 법인정보만)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C26",
+      "file": "Intelligent Masking_최종제출_set26.pdf",
+      "documents": [
+        "일일 환율동향 FAX수신서비스 신청서"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C27",
+      "file": "Intelligent Masking_최종제출_set27.pdf",
+      "documents": [
+        "입금시 매수상품등록 신청서(공통)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C28",
+      "file": "Intelligent Masking_최종제출_set28.pdf",
+      "documents": [
+        "자동이체(신규·변경·해지) 신청서"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C29",
+      "file": "Intelligent Masking_최종제출_set29.pdf",
+      "documents": [
+        "전자금융 이용신청서(은행용)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C30",
+      "file": "Intelligent Masking_최종제출_set30.pdf",
+      "documents": [
+        "제신고·주의사고·항목 의뢰서(연락처 변경)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C31",
+      "file": "Intelligent Masking_최종제출_set31.pdf",
+      "documents": [
+        "제증명서 등의 발급의뢰서(일반문구만)"
+      ],
+      "answer": {
+        "판정": "필수값 누락"
+      }
+    },
+    {
+      "case_id": "C32",
+      "file": "Intelligent Masking_최종제출_set32.pdf",
+      "documents": [
+        "투자자정보 확인서(설문지 누락)"
+      ],
+      "answer": {
+        "판정": "지원하지 않는 유형의 문서"
+      }
+    }
+  ]
+}
