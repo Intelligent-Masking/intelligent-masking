@@ -22,6 +22,7 @@ for line in (HERE / ".env").read_text(encoding="utf-8").splitlines() if (HERE / 
 AGENT_GRADE = os.getenv("AGENT_GRADE", "")
 AGENT_MASK_MID = os.getenv("AGENT_MASK_MID", "")
 AGENT_MASK_LOW = os.getenv("AGENT_MASK_LOW", "")
+VERIFY = os.getenv("VERIFY_MASKED", "") == "1"   # 마스킹본 재판정 검증. 기본 꺼짐(켜려면 .env 에 VERIFY_MASKED=1)
 AGENT_SPLIT = os.getenv("AGENT_SPLIT", "")   # 필수. 모든 문서는 먼저 분할 에이전트를 거쳐야 한 문서인지 여러 문서인지 알 수 있다.
 # 에이전트별 config(워크플로우 버전). 비우면 에이전트의 default config = 최신 버전으로 실행된다.
 CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), (AGENT_MASK_MID, "AGENT_MASK_MID_CONFIG"), (AGENT_MASK_LOW, "AGENT_MASK_LOW_CONFIG"), (AGENT_SPLIT, "AGENT_SPLIT_CONFIG")) if a}
@@ -179,7 +180,7 @@ def _pipeline(rid, data, filename, stage, uploaded, name):
             notes.append(f"{LABEL[lv]} 등급본을 만들지 못했습니다({why.get(lv, 'Mask 에이전트 출력에 PDF 없음')})"); continue
         (out / f"{lv}.pdf").write_bytes(pdf); pdfs[lv] = pdf
         outputs.append({"등급": LABEL[lv], "출처": "Studio Mask", "url": f"/runs/{rid}/{lv}.pdf"})
-    if pdfs:   # 만든 마스킹본을 병렬로 다시 판정
+    if pdfs and VERIFY:   # 만든 마스킹본을 병렬로 다시 판정
         stage(3)
         with ThreadPoolExecutor(len(pdfs)) as ex:
             checks = {lv: ex.submit(verify, lv, b, out) for lv, b in pdfs.items()}
@@ -210,21 +211,46 @@ def parse_split(resp, n):
     ok = docs and all(d and all(a <= b for a, b in d) for d, _ in docs) and pages == list(range(n))
     return [(name, d) for d, name in docs] if ok else None
 
+OTHERS = "others"   # 분할 Classify 의 '어느 서식에도 속하지 않음' 클래스. 등급 판정·마스킹을 하지 않는다.
+
+def parse_notes(resp):
+    """분할 워크플로우의 Instruct 노드 출력(others 갈래의 안내 문구)을 쪽 범위별로 모은다: {쪽 범위(0부터) 튜플: 텍스트}.
+    쪽 범위가 없는 응답(나뉘지 않은 한 문서)은 키 None. 인용 표시【†n】은 지운다."""
+    notes = {}
+    for it in resp["output"]:
+        if it.get("step_type") != "instruct": continue
+        for c in it.get("content", []):
+            try:
+                av = c.get("additional_values"); av = json.loads(av) if isinstance(av, str) else av or {}
+                pr = av.get("page_ranges"); key = None if pr is None else tuple(sorted((int(a) - 1, int(b) - 1) for a, b in pr))
+            except (AttributeError, TypeError, ValueError): continue
+            t = (c.get("text") or "").strip()
+            if t.startswith('"'):   # 문자열이 JSON 으로 한 번 더 감싸여 오는 경우
+                try: t = json.loads(t)
+                except ValueError: pass
+            notes[key] = re.sub(r"【[^】]*】", "", t).strip()
+    return notes
+
+def unsupported(name, text):
+    """others 문서의 결과. 등급 판정·마스킹 없이 안내 문구(Instruct 출력의 문서유형·사유)만 담는다."""
+    f = lambda k: (re.search(k + r":\s*(.+)", text) or [None, ""])[1].strip()
+    return {"문서종": name, "미지원": True, "문서유형": f("문서유형"), "사유": f("사유") or text or "지원 서식이 아니어서 등급 판정과 마스킹을 하지 않았습니다."}
+
 def split_docs(rid, data, filename):
-    """모든 문서를 분할 에이전트에 먼저 태워 문서 단위 쪽 범위(1개 이상)를 얻는다. 분할을 못 하면 한 문서로 추측하지 않고 실패시킨다."""
+    """모든 문서를 분할 에이전트에 먼저 태워 (문서별 (이름, 쪽 범위) 목록, others 안내 문구)를 얻는다. 분할을 못 하면 한 문서로 추측하지 않고 실패시킨다."""
     fid = proj = None
     try:
         with pymupdf.open(stream=data, filetype="pdf") as d: n = len(d)
         proj = scope(AGENT_SPLIT); fid = client(proj).files.create(file=(filename, data), purpose="user_data").id
         r = run_agent(AGENT_SPLIT, {proj: fid})
         (RUNS / rid / "raw_split.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
-        segs = parse_split(r, n)
+        segs, notes = parse_split(r, n), parse_notes(r)
     except Exception as e:
         raise HTTPException(502, f"문서 분할에 실패했습니다: {str(getattr(e, 'detail', e))[:200]}")
     finally:
         if fid: drop_file(proj, fid)
     if segs is None: raise HTTPException(502, "문서 분할 결과를 읽지 못했습니다. runs/<id>/raw_split.json 의 응답 형식을 확인하세요.")
-    return segs
+    return segs, notes
 
 def cut(data, ranges):
     with pymupdf.open(stream=data, filetype="pdf") as src, pymupdf.open() as dst:
@@ -233,24 +259,29 @@ def cut(data, ranges):
 
 def pipeline(rid, data, filename, stage):
     """분할 -> (문서마다 run_doc). 분할 결과가 한 문서면 원본 그대로 예전 결과 형태, 여러 문서면 {"결합": True, "문서들": [...]} (문서마다 자기 실행 폴더)."""
-    t0 = time.time(); segs = split_docs(rid, data, filename)
-    if len(segs) == 1: return run_doc(rid, data, filename, stage, segs[0][0])
+    t0 = time.time(); segs, notes = split_docs(rid, data, filename)
+    note = lambda ranges: notes.get(tuple(ranges), notes.get(None, ""))
+    if len(segs) == 1:
+        name, ranges = segs[0]
+        if name != OTHERS: return run_doc(rid, data, filename, stage, name)
+        stage(4); return {**unsupported(name, note(ranges)), "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
     hi = [0]
     def step(i): hi[0] = max(hi[0], i); stage(hi[0])   # 문서들이 병렬이라 진행 단계는 가장 앞선 값을 쓴다
     def one(k, seg):
         name, ranges = seg; sid = uuid.uuid4().hex; (RUNS / sid).mkdir()
         try:
             pdf = cut(data, ranges); (RUNS / sid / "input.pdf").write_bytes(pdf)
-            r = run_doc(sid, pdf, f"{Path(filename).stem}_{k}.pdf", step, name)
+            if name == OTHERS: r = {**unsupported(name, note(ranges)), "원본url": f"/runs/{sid}/input.pdf"}
+            else: r = run_doc(sid, pdf, f"{Path(filename).stem}_{k}.pdf", step, name)
         except HTTPException as e: r = {"오류": str(e.detail)}
         except Exception as e: r = {"오류": f"{type(e).__name__}: {e}"}
         r["쪽"] = ",".join(f"{a + 1}-{b + 1}" if b > a else str(a + 1) for a, b in ranges)
         return r
     with ThreadPoolExecutor(min(len(segs), 3)) as ex: docs = list(ex.map(one, range(1, len(segs) + 1), segs))
     ok = [d["등급"] for d in docs if "등급" in d]
-    if not ok: raise HTTPException(502, "분할한 문서를 모두 처리하지 못했습니다: " + "; ".join(d["오류"] for d in docs)[:300])
+    if not ok and not any("미지원" in d for d in docs): raise HTTPException(502, "분할한 문서를 모두 처리하지 못했습니다: " + "; ".join(d["오류"] for d in docs)[:300])
     stage(4)
-    return {"결합": True, "등급": max(ok, key=RANK.get), "문서들": docs, "비고": [], "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
+    return {"결합": True, "등급": max(ok, key=RANK.get) if ok else None, "문서들": docs, "비고": [], "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
 
 def work(rid, data, filename):
     job = JOBS[rid]

@@ -107,4 +107,31 @@ for agent in (boom, split_agent({"output": []}), split_agent(R([[1, 2]], [[4, 4]
     app.run_agent = agent; (app.RUNS / "r5").mkdir(exist_ok=True)
     try: app.pipeline("r5", four, "x.pdf", lambda i: None); raise SystemExit("분할 실패인데 통과")
     except app.HTTPException as e: assert e.status_code == 502 and "분할" in e.detail, e.detail
+# others: 등급 판정·마스킹 없이 분할 워크플로우의 Instruct 안내 문구만 보여준다
+IR = lambda docs, notes: {"output": [
+    {"step_type": "document-classify", "content": [{"text": n, "additional_values": json.dumps({"page_ranges": rs} if rs else {})} for n, rs in docs]},
+    {"step_type": "instruct", "content": [{"text": json.dumps(tx), "additional_values": json.dumps({"page_ranges": rs} if rs else {})} for rs, tx in notes]}]}
+NOTE = "Decision: 미지원" + chr(10)*2 + "문서유형: 회의록【†1】" + chr(10)*2 + "사유: 서식이 아니다【†2】"   # 실제 응답은 줄바꿈이 있는 텍스트
+calls = []
+app.run_doc = lambda sid, data, fname, step, doc="": (calls.append(doc), {"등급": "중", "문서종": doc, "마스킹본": [], "비고": [], "원본url": f"/runs/{sid}/input.pdf"})[1]
+(app.RUNS / "r6").mkdir()
+app.run_agent = split_agent(IR([("문서0", [[1, 2]]), ("others", [[3, 3]])], [([[3, 3]], NOTE)]))
+r = app.pipeline("r6", pdf(3), "m.pdf", lambda i: None)
+o = r["문서들"][1]
+assert calls == ["문서0"] and r["등급"] == "중", (calls, r)                      # others 는 등급화에 보내지 않는다
+assert o["미지원"] and o["문서종"] == "others" and o["문서유형"] == "회의록" and o["사유"] == "서식이 아니다" and "【" not in str(o), o
+assert len(pymupdf.open(app.RUNS / o["원본url"].split("/")[2] / "input.pdf")) == 1 and r["문서들"][0]["쪽"] == "1-2" and o["쪽"] == "3"
+# 한 문서가 others 면 단일 결과도 등급 없이 안내만
+app.run_agent = split_agent(IR([("others", [[1, 1]])], [([[1, 1]], NOTE)]))
+r = app.pipeline("r6", one, "o.pdf", lambda i: None)
+assert calls == ["문서0"] and r["미지원"] and "등급" not in r and r["사유"] == "서식이 아니다" and r["원본url"].endswith("/r6/input.pdf"), r
+# 나뉘지 않은 한 문서는 쪽 범위가 없다: 분류와 안내 모두 범위 없이 와도 짝지어진다
+app.run_agent = split_agent(IR([("others", None)], [(None, NOTE)]))
+r = app.pipeline("r6", one, "o.pdf", lambda i: None)
+assert r["미지원"] and r["문서유형"] == "회의록", r
+# 전부 others 인 결합 문서는 오류가 아니라 등급 없는 결과
+app.run_agent = split_agent(IR([("others", [[1, 1]]), ("others", [[2, 2]])], [([[1, 1]], NOTE), ([[2, 2]], NOTE)]))
+r = app.pipeline("r6", pdf(2), "oo.pdf", lambda i: None)
+assert r["결합"] and r["등급"] is None and all(d["미지원"] for d in r["문서들"]) and calls == ["문서0"], r
+app.run_doc = real_run_doc
 print("OK")
