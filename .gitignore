@@ -6,3 +6,6 @@ __pycache__/
 *.py[cod]
 runs/
 .DS_Store
+
+.claude/
+assets/_t/

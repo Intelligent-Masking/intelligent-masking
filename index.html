@@ -30,6 +30,8 @@ dialog{border:1px solid var(--line);border-radius:18px;max-width:600px;width:cal
 /* Secondary copy stays readable on the light financial workspace. */
 .breadcrumb,.brand-caption,.nav-item,.single-file,.drop-caption,.upload-bottom,.support-line,.file-size,.grade-row dd,.guide-bottom p,.privacy-note,.result-description,.chip-line,.result-time,.documents-heading span,.result-footnote,.footer-inner,.dialog-body p,.dialog-note{color:#63756b}
 .doc-preview{overflow:hidden}.doc-preview img{display:block;width:100%;height:100%;object-fit:contain;object-position:top center;background:#fff;box-shadow:0 2px 6px #223b2920}.preview-caption{position:absolute;bottom:19px;left:50%;transform:translateX(-50%);background:#ffffffed;border:1px solid #e1e9e3;border-radius:4px;padding:3px 8px;font-size:9px;color:#63756b;white-space:nowrap}.preview-error{text-align:center;color:#63756b;font-size:12px;padding:80px 10px}
+.note,.result-description{white-space:pre-line}
+.basis-text{display:block;line-height:1.65;color:#37463e;font-size:14px}
 </style>
 </head>
 <body>
@@ -47,18 +49,18 @@ dialog{border:1px solid var(--line);border-radius:18px;max-width:600px;width:cal
 <div id="selected" class="selected-file hide"><div class="file-icon" aria-hidden="true">PDF</div><div class="file-details"><span id="fname" class="file-name"></span><span id="fsize" class="file-size"></span></div><button id="remove" class="icon-button" type="button" aria-label="선택한 파일 제거"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div>
 <div class="upload-bottom"><span id="file-support">PDF 파일 지원 · 여러 페이지 문서도 가능</span><span><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>원본 유지</span></div><button id="go" class="primary start-button" type="button" disabled><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg><span id="go-label">문서 분석 시작</span></button><p class="support-line" id="hint" role="status">분석할 PDF를 먼저 선택해 주세요.</p><div id="err" class="error hide" role="alert"></div></section>
 <aside class="panel grade-guide" aria-labelledby="guide-title"><div class="guide-top"><h2 id="guide-title">한눈에 보는 위험 등급</h2><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg></div><dl class="grade-list">
-<div class="grade-row"><span class="grade-token g-상">상</span><div><dt>민감정보 포함</dt><dd>고유식별번호, 계좌·금융정보,<br>건강정보, 서명·인감 등</dd></div></div>
-<div class="grade-row"><span class="grade-token g-중">중</span><div><dt>개인정보 포함</dt><dd>이름, 생년월일, 연락처,<br>거래 신청·설정 정보 등</dd></div></div>
-<div class="grade-row"><span class="grade-token g-하">하</span><div><dt>일반정보 중심</dt><dd>상·중 항목 없이 공개 법인정보나<br>일반적인 내용만 포함</dd></div></div></dl><div class="guide-bottom"><p>문서에 포함된 가장 높은 위험 등급으로 판정합니다.</p><button class="text-button" type="button" data-guide>자세한 기준 보기<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button></div></aside></div>
+<div class="grade-row"><span class="grade-token g-상">상</span><div><dt>점수 13점 이상</dt><dd>고유식별번호, 계좌·금융정보,<br>건강정보, 서명·인감 등</dd></div></div>
+<div class="grade-row"><span class="grade-token g-중">중</span><div><dt>5점 이상 13점 미만</dt><dd>이름, 생년월일, 연락처,<br>거래 신청·설정 정보 등</dd></div></div>
+<div class="grade-row"><span class="grade-token g-하">하</span><div><dt>5점 미만</dt><dd>공개 법인정보 등 일반적인 내용이<br>대부분이거나 기재값이 거의 없음</dd></div></div></dl><div class="guide-bottom"><p>기재된 항목별 위험 점수를 합산해 등급을 판정합니다.</p><button class="text-button" type="button" data-guide>자세한 기준 보기<svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg></button></div></aside></div>
 <section id="progress" class="panel progress-panel hide" aria-labelledby="progress-title" aria-live="polite"><div class="progress-heading"><h2 id="progress-title">문서를 분석하고 있어요</h2><span class="progress-message" id="progress-message">문서를 업로드하고 있습니다.</span></div><ol class="steps" id="steps"></ol><div class="progress-bar" role="progressbar" aria-label="문서 처리 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-meter"><div id="progress-fill" style="width:0%"></div></div></section>
 <section id="how" class="how-it-works" aria-labelledby="how-title"><h2 id="how-title">이렇게 처리해요</h2><div class="how-items"><span class="how-item"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><b>문서 읽기</b></span><span class="how-divider" aria-hidden="true"></span><span class="how-item"><svg class="icon" aria-hidden="true"><use href="#i-scan"/></svg><b>위험 등급 분석</b></span><span class="how-divider" aria-hidden="true"></span><span class="how-item"><svg class="icon" aria-hidden="true"><use href="#i-mask"/></svg><b>등급별 마스킹본 생성</b></span></div></section><p class="privacy-note">선택한 문서는 분석을 위해 Upstage로 전송되며, 원본과 결과는 분석 서버에 저장됩니다.</p>
 <section id="out" class="results hide" aria-labelledby="results-title" tabindex="-1"><div class="results-heading"><h2 id="results-title">문서 분석 결과</h2><button class="secondary" id="reset" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>새 문서 분석</button></div><div class="panel summary"><div class="result-grade" id="badge"><strong id="grade-value"></strong><span>위험 등급</span></div><div class="result-meta"><h3 id="dtype"></h3><p id="result-description" class="result-description"></p><div class="chip-line"><span>판정 근거</span><div id="cats" class="chips"></div><div id="items" class="chips"></div></div></div><div class="result-time"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><strong id="took"></strong><span>분석 소요 시간</span></div></div><div id="notes"></div><div id="no-mask" class="no-mask hide">하 등급 문서입니다. 추가 마스킹 없이 원본을 확인할 수 있습니다.</div><div class="documents-heading"><h3>원본과 마스킹 문서</h3><span>마스킹본을 열어 내용을 확인한 뒤 사용해 주세요.</span></div><div class="documents" id="grid"></div><p class="result-footnote">중본·하본은 목표 등급에 맞춰 생성한 문서입니다.</p></section>
 </main><footer class="site-footer"><div class="footer-inner"><p><span class="footer-brand">Intelligent Masking</span> &nbsp; 금융 문서 개인정보 분석·마스킹</p><div class="footer-right"><span>iM뱅크 해커톤 참가 프로젝트</span><button type="button" data-guide>분류 기준 안내</button></div></div></footer>
-<dialog id="guide-dialog" aria-labelledby="dialog-title"><div class="dialog-top"><h2 id="dialog-title">개인정보 위험 등급 기준</h2><button class="icon-button" id="close-guide" type="button" aria-label="등급 기준 닫기"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="dialog-body"><p>실제로 기재된 정보 중 가장 높은 등급을 적용합니다. 빈칸과 인쇄된 안내 문구는 판정 대상에서 제외하는 것이 기준입니다.</p><table><thead><tr><th>등급</th><th>판정 대상</th><th>생성 문서</th></tr></thead><tbody><tr><td><span class="grade-token g-상">상</span></td><td>고유식별정보, 건강·장애 등 민감정보, 계좌·금융정보, 인증정보 및 실제 서명·인감</td><td>중본·하본</td></tr><tr><td><span class="grade-token g-중">중</span></td><td>이름·생년월일·연락처 등 개인정보, 거래 신청·설정 정보, 대표자명·사업자·법인 등록번호</td><td>하본</td></tr><tr><td><span class="grade-token g-하">하</span></td><td>상·중 정보 없이 법인명·사업장 주소·대표 연락처 등 공개 법인정보만 있거나 기재값이 없는 문서</td><td>원본 확인</td></tr></tbody></table><p class="dialog-note">자동 판정과 마스킹 결과는 문서 상태와 내용에 따라 달라질 수 있습니다. 공유 전 결과 문서를 직접 확인해 주세요.</p></div><div class="dialog-bottom"><button id="confirm-guide" class="primary" type="button">확인했어요</button></div></dialog>
+<dialog id="guide-dialog" aria-labelledby="dialog-title"><div class="dialog-top"><h2 id="dialog-title">개인정보 위험 등급 기준</h2><button class="icon-button" id="close-guide" type="button" aria-label="등급 기준 닫기"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button></div><div class="dialog-body"><p>문서에 실제로 기재된 정보를 항목별 위험 점수로 환산하고, 여러 건 기재·정보 조합·부분 마스킹 여부를 반영해 최종 점수로 등급을 판정합니다. 빈칸과 인쇄된 안내 문구는 판정 대상에서 제외합니다.</p><table><thead><tr><th>등급</th><th>판정 기준</th><th>생성 문서</th></tr></thead><tbody><tr><td><span class="grade-token g-상">상</span></td><td>최종 점수 13점 이상. 고유식별정보, 건강·장애 등 민감정보, 계좌·금융정보, 실제 서명·인감이 기재되었거나 이름·연락처와 조합된 경우</td><td>중본·하본</td></tr><tr><td><span class="grade-token g-중">중</span></td><td>최종 점수 5점 이상 13점 미만. 이름·생년월일·연락처 등 개인정보, 거래 신청·설정 정보, 대표자명·사업자등록번호</td><td>하본</td></tr><tr><td><span class="grade-token g-하">하</span></td><td>최종 점수 5점 미만. 법인명·사업장 주소·대표 연락처 등 공개 법인정보 위주이거나 기재값이 없는 문서</td><td>원본 확인</td></tr></tbody></table><p class="dialog-note">자동 판정과 마스킹 결과는 문서 상태와 내용에 따라 달라질 수 있습니다. 공유 전 결과 문서를 직접 확인해 주세요.</p></div><div class="dialog-bottom"><button id="confirm-guide" class="primary" type="button">확인했어요</button></div></dialog>
 <script>
 const $=id=>document.getElementById(id);
 const drop=$('drop'),input=$('f'),go=$('go'),dialog=$('guide-dialog');
-const stageNames=['업로드','등급 판정','마스킹','검증','완료'];
+const stageNames=['업로드','등급 판정','마스킹','완료'];
 let file=null,busy=false;
 const icon=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -78,17 +80,22 @@ drop.onclick=()=>input.click();input.onchange=()=>selectFile(input.files[0]);$('
 drop.addEventListener('drop',e=>{if(busy)return;if(e.dataTransfer.files.length>1){selectFile(null);showError('한 번에 한 개의 PDF를 선택해 주세요.');return;}selectFile(e.dataTransfer.files[0]);});
 document.querySelectorAll('[data-guide]').forEach(button=>button.onclick=()=>dialog.showModal());$('close-guide').onclick=$('confirm-guide').onclick=()=>dialog.close();
 dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
+const chrome=show=>document.querySelectorAll('#out > .documents-heading, #out > .result-footnote').forEach(e=>e.classList.toggle('hide',!show));   // 원본·마스킹 문서 머리글/각주: 마스킹본이 없는 결과에서는 숨김
+const basisLine=(show)=>$('cats').parentElement.classList.toggle('hide',!show);
+function basis(result){const old=result['근거범주'];if(old){chips(old,$('cats'));chips(result['근거항목'],$('items'));basisLine(true);return;}   // 예전 형식: 범주·항목 칩
+ const text=String(result['근거항목']||'').replace(/(?:최종\s*)?점수(?:는|가|를|은|이)?\s*[\d.]+\s*(?:점)?\s*(?:으)?로\s*/g,'').trim();   // 점수 수치는 근거로 보여주지 않는다
+ $('items').innerHTML='';$('cats').innerHTML=text?`<span class="basis-text">${esc(text)}</span>`:'';basisLine(!!text);}   // 새 형식: 판정 근거 문장 그대로
 function chips(text,element){const parts=String(text||'').split(/[,、]\s*/).filter(x=>x&&x!=='없음'&&x!=='해당 없음');element.innerHTML=parts.map(x=>`<span class="chip">${esc(x)}</span>`).join('');}
 function showSteps(current,done=false){
- const step=Math.max(0,Math.min(4,current));$('progress').classList.remove('hide');$('progress').classList.toggle('processing',!done);
+ const step=Math.max(0,Math.min(3,current));$('progress').classList.remove('hide');$('progress').classList.toggle('processing',!done);
  $('steps').innerHTML=stageNames.map((name,i)=>`<li class="${done||i<step?'ok':i===step?'on':''}" ${i===step?'aria-current="step"':''}><span class="step-dot">${done||i<step?'✓':i+1}</span>${name}</li>`).join('');
- const percent=done?100:[8,25,50,78,95][step];$('progress-fill').style.width=percent+'%';$('progress-meter').setAttribute('aria-valuenow',String(percent));
+ const percent=done?100:[8,30,65,95][step];$('progress-fill').style.width=percent+'%';$('progress-meter').setAttribute('aria-valuenow',String(percent));
  $('progress-title').textContent=done?'문서 분석이 완료됐어요':'문서를 분석하고 있어요';
- $('progress-message').textContent=done?'아래에서 결과를 확인하세요.':['문서를 업로드하고 있습니다.','문서의 개인정보를 확인하고 있습니다.','필요한 마스킹 문서를 만들고 있습니다.','마스킹본이 목표 등급에 도달했는지 다시 확인하고 있습니다.','결과를 정리하고 있습니다.'][step];
+ $('progress-message').textContent=done?'아래에서 결과를 확인하세요.':['문서를 업로드하고 있습니다.','문서의 개인정보를 확인하고 있습니다.','필요한 마스킹 문서를 만들고 있습니다.','결과를 정리하고 있습니다.'][step];
 }
 function fail(message){setBusy(false);$('progress').classList.remove('processing');$('progress-title').textContent='분석을 완료하지 못했어요';$('progress-message').textContent='아래 안내를 확인하고 다시 시도해 주세요.';$('hint').textContent='파일을 확인한 뒤 다시 분석할 수 있습니다.';showError(message);}
 function safePdfUrl(value){if(typeof value!=='string'||!/^\/runs\/[0-9a-f]{32}\/(input|mid|low)\.pdf$/.test(value))throw Error('결과 문서 주소를 확인할 수 없습니다.');return value;}
-const docCard=(title,target,url,isOriginal,check)=>{url=safePdfUrl(url);if(!['상','중','하','-'].includes(target))throw Error('마스킹 목표 등급을 확인할 수 없습니다.');return `<article class="document-card"><div class="doc-top"><h4>${esc(title)}</h4><span class="doc-tag g-${target}">${target==='-'?'원본':`${isOriginal?'원본':'목표'} ${target} 등급`}</span></div><div class="doc-preview"><img src="${url}/preview" alt="${esc(title)} 첫 페이지 미리보기" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="preview-error" hidden>미리보기를 표시할 수 없습니다.<br>아래 ‘크게 보기’로 문서를 열어 주세요.</p><span class="preview-caption">첫 페이지 미리보기</span></div>${check?`<p class="doc-verify ${check['검증']==='통과'?'':check['검증']==='불가'||check['검증']==='과마스킹'?'warn':'bad'}">${esc(check['검증메모'])}</p>`:''}<div class="doc-actions"><a href="${url}" target="_blank" rel="noopener noreferrer">${icon('open')}크게 보기</a><a class="download" href="${url}?download=1">${icon('download')}PDF 다운로드</a></div></article>`;};
+const docCard=(title,target,url,isOriginal)=>{url=safePdfUrl(url);if(!['상','중','하','-'].includes(target))throw Error('마스킹 목표 등급을 확인할 수 없습니다.');return `<article class="document-card"><div class="doc-top"><h4>${esc(title)}</h4><span class="doc-tag g-${target}">${target==='-'?'원본':`${isOriginal?'원본':'목표'} ${target} 등급`}</span></div><div class="doc-preview"><img src="${url}/preview" alt="${esc(title)} 첫 페이지 미리보기" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="preview-error" hidden>미리보기를 표시할 수 없습니다.<br>아래 ‘크게 보기’로 문서를 열어 주세요.</p><span class="preview-caption">첫 페이지 미리보기</span></div><div class="doc-actions"><a href="${url}" target="_blank" rel="noopener noreferrer">${icon('open')}크게 보기</a><a class="download" href="${url}?download=1">${icon('download')}PDF 다운로드</a></div></article>`;};
 function showOut(){
  $('out').classList.remove('hide');$('hint').textContent='분석이 완료됐어요. 원본과 마스킹본을 확인해 주세요.';$('out').focus({preventScroll:true});$('out').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
 }
@@ -97,34 +104,35 @@ function renderCombined(result){
  $('grid').className='';
  $('grid').innerHTML=docs.map((d,i)=>{
   const head=`문서 ${i+1} · ${esc(d['쪽'])}쪽`;
-  if(d['미지원'])return `<section><div class="documents-heading"><h3>${head} · 지원하지 않는 문서</h3><span>${esc(d['문서유형']||'')}</span></div><div class="note">${esc(d['사유'])}</div><div class="documents two-columns">${docCard('원본 문서','-',d['원본url'],true)}</div></section>`;
+  if(d['미지원']||d['검토필요'])return `<section><div class="documents-heading"><h3>${head} · ${d['검토필요']?'검토 필요 문서':'지원하지 않는 문서'}</h3><span>${esc(d['문서유형']||d['문서종']||'')}</span></div><div class="note">${esc(d['사유'])}</div><div class="documents two-columns">${docCard('원본 문서','-',d['원본url'],true)}</div></section>`;
   if(d['오류'])return `<section><div class="documents-heading"><h3>${head}</h3><span>처리하지 못했습니다</span></div><div class="error">${esc(d['오류'])}</div></section>`;
   const outs=Array.isArray(d['마스킹본'])?d['마스킹본']:[];
-  const cards=docCard('원본 문서',d['등급'],d['원본url'],true)+outs.map(o=>docCard(o['등급']+' 등급 마스킹본',o['등급'],o['url'],false,o['검증메모']?o:null)).join('');
+  const cards=docCard('원본 문서',d['등급'],d['원본url'],true)+outs.map(o=>docCard(o['등급']+' 등급 마스킹본',o['등급'],o['url'],false)).join('');
   const notes=(Array.isArray(d['비고'])?d['비고']:[]).map(n=>`<div class="note">${esc(n)}</div>`).join('');
   return `<section><div class="documents-heading"><h3>${head} · ${esc(d['문서종']||'문서 유형 미확인')} · ${esc(d['등급'])} 등급</h3><span>${esc(d['근거항목']||'')}</span></div>${notes}<div class="documents${outs.length<2?' two-columns':''}">${cards}</div></section>`;
  }).join('');
  $('grade-value').textContent=top||'—';$('badge').className='result-grade'+(top?' g-'+top:'');
- $('dtype').textContent=`결합 문서 · ${docs.length}건`;$('result-description').textContent='여러 문서가 결합된 파일입니다. 문서별로 등급을 판정하고 마스킹했습니다. 가장 높은 등급이 전체 등급입니다.';
- $('cats').innerHTML='';$('items').innerHTML='';$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
+ $('dtype').textContent=`결합 문서 · ${docs.length}건`;const rv=docs.filter(d=>d['검토필요']).length;$('result-description').textContent='여러 문서가 결합된 파일입니다. 문서별로 등급을 판정하고 마스킹했습니다. 가장 높은 등급이 전체 등급입니다.'+(rv?` ${rv}건은 필수값 누락 또는 추가 확인이 필요해 등급을 판정하지 않았습니다.`:'');chrome(docs.some(d=>(d['마스킹본']||[]).length));
+ $('cats').innerHTML='';$('items').innerHTML='';basisLine(false);$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
  $('notes').innerHTML='';$('no-mask').classList.add('hide');showOut();
 }
 function renderUnsupported(result){
  $('grid').className='documents two-columns';$('grid').innerHTML=docCard('원본 문서','-',result['원본url'],true);
- $('grade-value').textContent='—';$('badge').className='result-grade';$('dtype').textContent='지원하지 않는 문서';
- $('result-description').textContent=(result['문서유형']?result['문서유형']+' · ':'')+result['사유'];
- $('cats').innerHTML='';$('items').innerHTML='';$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
- $('notes').innerHTML='';$('no-mask').classList.add('hide');showOut();
+ $('grade-value').textContent='—';$('badge').className='result-grade';$('dtype').textContent=result['검토필요']?'검토 필요 문서':'지원하지 않는 문서';
+ const review=!!result['검토필요'],who=result['문서유형']||result['문서종']||'';
+ $('result-description').textContent=review?(who?who+' · ':'')+'필수 항목 누락 또는 추가 확인이 필요해 등급을 판정하지 않았습니다. 아래 안내를 확인하고 보완한 뒤 다시 분석해 주세요.':(who?who+' · ':'')+result['사유'];
+ $('cats').innerHTML='';$('items').innerHTML='';basisLine(false);chrome(false);$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
+ $('notes').innerHTML=review?`<div class="note">${esc(result['사유'])}</div>`:'';$('no-mask').classList.add('hide');showOut();
 }
 function render(result){
- if(result['미지원'])return renderUnsupported(result);
+ if(result['미지원']||result['검토필요'])return renderUnsupported(result);
  if(result['결합'])return renderCombined(result);
  const grade=result['등급'];if(!['상','중','하'].includes(grade))throw Error('문서 등급을 확인할 수 없습니다.');
  const original=safePdfUrl(result['원본url']);const outputs=Array.isArray(result['마스킹본'])?result['마스킹본']:[];
- let html=docCard('원본 문서',grade,original,true);for(const output of outputs)html+=docCard(output['등급']+' 등급 마스킹본',output['등급'],output['url'],false,output['검증메모']?output:null);
+ let html=docCard('원본 문서',grade,original,true);for(const output of outputs)html+=docCard(output['등급']+' 등급 마스킹본',output['등급'],output['url'],false);
  $('grid').className='documents';$('grid').innerHTML=html;$('grid').classList.toggle('two-columns',outputs.length<2);$('grade-value').textContent=grade;$('badge').className='result-grade g-'+grade;
  $('dtype').textContent=result['문서종']||'문서 유형 미확인';$('result-description').textContent={상:'민감정보가 포함되어 있어 공유 전 마스킹이 필요합니다.',중:'개인정보 또는 거래 신청 정보가 포함되어 있습니다.',하:'상·중 등급에 해당하는 정보가 확인되지 않았습니다.'}[grade];
- chips(result['근거범주'],$('cats'));chips(result['근거항목'],$('items'));$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
+ chrome(true);basis(result);$('took').textContent=(Number.isFinite(Number(result['소요초']))?Number(result['소요초']):'—')+'초';
  const notes=Array.isArray(result['비고'])?result['비고']:[];$('notes').innerHTML=notes.map(n=>`<div class="note">${esc(n)}</div>`).join('');$('no-mask').classList.toggle('hide',grade!=='하'||outputs.length>0||notes.length>0);
  showOut();
 }

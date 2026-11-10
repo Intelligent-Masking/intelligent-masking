@@ -8,7 +8,6 @@ assert app.parse_grade("Decision: **중**") == "중"
 assert app.parse_grade("없음") is None
 assert app.NEED["상"] == ["mid", "low"] and app.NEED["중"] == ["low"] and app.NEED["하"] == []
 
-# 재판정 검증: 통과(목표와 같음) / 미달(더 높음) / 과마스킹(더 낮음) / 불가(읽기 실패)
 import tempfile
 from pathlib import Path
 deleted = []
@@ -17,13 +16,6 @@ class _Files:
     def delete(self, fid): deleted.append(fid)
 class _Client: files = _Files()
 app.scope = lambda a: "proj_x"; app.client = lambda p=None: _Client()
-def fake(decision):
-    app.run_agent = lambda a, f: {"output": [{"model": "Instruct - 등급", "content": [{"text": decision}]}]}
-out = Path(tempfile.mkdtemp())
-for decision, lv, want in (("Decision: 중", "mid", "통과"), ("Decision: 상", "mid", "미달"), ("Decision: 하", "mid", "과마스킹"),
-                           ("Decision: 하", "low", "통과"), ("Decision: 중", "low", "미달"), ("이상한 응답", "low", "불가")):
-    fake(decision); assert app.verify(lv, b"%PDF", out)["검증"] == want, (decision, lv)
-assert len(deleted) == 6   # 재판정용 업로드는 매번 지운다
 
 # PDF 주소는 Upstage https 도메인만 허용
 assert app.trusted_url("https://studio.upstage.ai/files/job-results/a.pdf")
@@ -67,12 +59,11 @@ def fake_agent(a, f):
     if a == "agt_m": raise app.HTTPException(502, "중 마스킹 실패")
     return {"output": []}
 app.run_agent = fake_agent; app.find_pdf = lambda r, ex: b"%PDF-masked"
-app.verify = lambda lv, pdf, out: {"재판정": "하", "검증": "통과", "검증메모": "ok"}
 (app.RUNS / "r1").mkdir()
 r = app.pipeline("r1", one, "a.pdf", lambda i: None)
 assert "결합" not in r and r["원본url"].endswith("/r1/input.pdf") and r["문서종"] == "문서0"   # 문서종 = 분할 결과의 이름
 assert [o["등급"] for o in r["마스킹본"]] == ["하"] and "중 마스킹 실패" in r["비고"][0], r
-assert len(deleted) == 8   # 분할·등급 업로드 사본도 처리 후 지운다
+assert len(deleted) == 2   # 분할·등급 업로드 사본도 처리 후 지운다
 def split_agent(resp, base=fake_agent):
     return lambda a, f: resp if a == "agt_s" else base(a, f)
 # 4쪽 = 문서 3건: 문서마다 자기 폴더·원본·결과를 가진다
@@ -135,3 +126,25 @@ r = app.pipeline("r6", pdf(2), "oo.pdf", lambda i: None)
 assert r["결합"] and r["등급"] is None and all(d["미지원"] for d in r["문서들"]) and calls == ["문서0"], r
 app.run_doc = real_run_doc
 print("OK")
+
+# 새 등급 워크플로우(실제 응답 형식): validate green -> 'Instruct - 등급판정프롬프트'(표), red -> 'Instruct - 검토필요'(마크다운, 등급 없음)
+TABLE = "| 개인정보 위험 등급 | 위험 점수 | 판정 근거 |\n|---|---|---|\n| 상 | 21.92 | 계좌번호 3건【†1】이 확인되어 상 등급입니다.【†2】 |"
+CITED = "| 개인정보 위험 등급 | 위험 점수 | 판정 근거 |\n|---|---|---|\n| 상 | 13.91【†1】 | 성명【†2】이 확인되어 높은 가중【†3】 |"   # 점수 칸에도 인용 표시가 붙어 온다
+assert app.parse_grade(CITED) == "상" and app.grade_basis(CITED) == "성명이 확인되어 높은 가중"
+assert app.parse_grade(TABLE) == "상" and app.parse_grade(TABLE.replace("| 상 |", "| **중** |")) == "중"
+assert app.grade_basis(TABLE) == "계좌번호 3건이 확인되어 상 등급입니다." and app.grade_basis("Decision: 상") == ""
+REVIEW = "## 1. 판정\n**필수값 누락**【†1】\n\n## 2. 누락 항목\n- 페이지1 사업자등록번호 누락【†2】"
+assert app.parse_grade(REVIEW) is None
+rd = Path(tempfile.mkdtemp()); (rd / "r7").mkdir(); app.RUNS = rd
+app.run_agent = lambda a, f: {"output": [{"model": "Instruct - 검토필요", "content": [{"text": REVIEW}]}]}
+r = app.run_doc("r7", one, "a.pdf", lambda i: None, "환율FAX")
+assert r["검토필요"] and "등급" not in r and "【" not in r["사유"] and "사업자등록번호 누락" in r["사유"] and "**" not in r["사유"] and "##" not in r["사유"], r
+app.run_agent = lambda a, f: {"output": [{"model": "Instruct - 등급판정프롬프트", "content": [{"text": TABLE}]}]}
+app.AGENT_MASK_MID = app.AGENT_MASK_LOW = ""
+r = app.run_doc("r7", one, "a.pdf", lambda i: None, "잔액증명")
+assert r["등급"] == "상" and r["근거항목"].startswith("계좌번호 3건") and "점수" not in r["근거항목"], r
+
+# 등급 칸·점수 칸·근거 칸 어디에나 인용 표시가 붙어 온다 (실제 응답)
+ALLCITED = "| 개인정보 위험 등급 | 위험 점수 | 판정 근거 |\n|---|---|---|\n| 상【†1】 | 13.73【†2】 | 고유식별정보 1건과 일반 개인식별정보가 확인되었습니다.【†3】【†4】 주소와 국적은 다건 보정이 적용되었습니다. |"
+assert app.parse_grade(ALLCITED) == "상" and app.grade_basis(ALLCITED) == "고유식별정보 1건과 일반 개인식별정보가 확인되었습니다. 주소와 국적은 다건 보정이 적용되었습니다."
+assert app.parse_grade(ALLCITED.replace("상【†1】", "중【†1】")) == "중" and app.parse_grade(ALLCITED.replace("상【†1】", "**하**【†1】")) == "하"

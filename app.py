@@ -1,6 +1,6 @@
 """문서 등급 판정 + 한 단계 낮은 마스킹본 반환 웹서비스.
 실행: README.md 참고.  흐름: 업로드 -> 등급 에이전트 -> 등급에 따라 필요한 Mask 에이전트만 병렬 호출 -> 마스킹본 반환(순차: 하 등급은 마스킹 비용 없음).
-마스킹 PDF는 Mask 에이전트(Agents API) 출력에서 찾고, 만든 마스킹본은 등급 에이전트로 다시 판정해 목표 등급 도달을 검증한다.
+마스킹 PDF는 Mask 에이전트(Agents API) 출력에서 찾는다.
 """
 import base64, json, os, re, threading, time, urllib.request, uuid
 from urllib.parse import urlparse
@@ -22,7 +22,6 @@ for line in (HERE / ".env").read_text(encoding="utf-8").splitlines() if (HERE / 
 AGENT_GRADE = os.getenv("AGENT_GRADE", "")
 AGENT_MASK_MID = os.getenv("AGENT_MASK_MID", "")
 AGENT_MASK_LOW = os.getenv("AGENT_MASK_LOW", "")
-VERIFY = os.getenv("VERIFY_MASKED", "") == "1"   # 마스킹본 재판정 검증. 기본 꺼짐(켜려면 .env 에 VERIFY_MASKED=1)
 AGENT_SPLIT = os.getenv("AGENT_SPLIT", "")   # 필수. 모든 문서는 먼저 분할 에이전트를 거쳐야 한 문서인지 여러 문서인지 알 수 있다.
 # 에이전트별 config(워크플로우 버전). 비우면 에이전트의 default config = 최신 버전으로 실행된다.
 CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), (AGENT_MASK_MID, "AGENT_MASK_MID_CONFIG"), (AGENT_MASK_LOW, "AGENT_MASK_LOW_CONFIG"), (AGENT_SPLIT, "AGENT_SPLIT_CONFIG")) if a}
@@ -74,9 +73,17 @@ def step_text(resp, key):
             return t
     return ""
 
+CITE = re.compile(r"【[^】]*】")   # 에이전트 출력에 붙는 인용 표시. 표의 어느 칸에도 붙어 올 수 있어 읽기 전에 모두 지운다
+
 def parse_grade(text):
-    m = re.search(r"Decision:\s*\W*([상중하])", text)
-    return m.group(1) if m else None
+    text = CITE.sub("", text)
+    m = re.search(r"Decision:\s*\W*([상중하])|\|\s*\**([상중하])\**\s*\|\s*[\d.]+\s*\|", text)   # 예전 'Decision: 상' / 새 등급 표 '| 상 | 21.92 | 근거 |'
+    return (m.group(1) or m.group(2)) if m else None
+
+def grade_basis(text):
+    """새 등급 표의 판정 근거 칸(인용 표시 제외). 예전 형식이면 빈 문자열."""
+    m = re.search(r"\|\s*\**[상중하]\**\s*\|\s*[\d.]+\s*\|\s*(.+?)\s*\|?\s*$", CITE.sub("", text).strip(), re.S)
+    return m.group(1).strip() if m else ""
 
 def trusted_url(s):
     """에이전트 출력의 PDF 주소는 Upstage 도메인(https)만 내려받는다."""
@@ -108,8 +115,8 @@ def find_pdf(resp, exclude_ids):
             continue
     return None
 
-STEPS = ["업로드", "등급 판정", "마스킹", "검증", "완료"]
-JOBS = {}   # 실행 id -> {"step": 0~4, "done": bool, "result"|"error"}  (메모리, 서버 재시작하면 사라짐)
+STEPS = ["업로드", "등급 판정", "마스킹", "완료"]
+JOBS = {}   # 실행 id -> {"step": 0~3, "done": bool, "result"|"error"}  (메모리, 서버 재시작하면 사라짐)
 
 RANK = {"하": 0, "중": 1, "상": 2}
 
@@ -118,27 +125,8 @@ def drop_file(proj, fid):
     try: client(proj).files.delete(fid)
     except Exception: pass
 
-def verify(lv, pdf, out):
-    """마스킹본을 등급 에이전트에 다시 넣어 목표 등급과 비교한다(통과 = 목표와 정확히 같음). 실패해도 전체 흐름은 막지 않는다."""
-    target = LABEL[lv]
-    fid = None
-    try:
-        proj = scope(AGENT_GRADE)
-        fid = client(proj).files.create(file=(f"{lv}.pdf", pdf), purpose="user_data").id
-        g = run_agent(AGENT_GRADE, {proj: fid})
-        (out / f"raw_regrade_{lv}.json").write_text(json.dumps(g, ensure_ascii=False, indent=1), encoding="utf-8")
-        got = parse_grade(step_text(g, "instruct"))
-    except Exception:
-        got = None
-    finally:
-        if fid: drop_file(proj, fid)
-    if got is None: return {"재판정": None, "검증": "불가", "검증메모": "재판정 결과를 읽지 못했습니다. 마스킹본을 직접 확인해 주세요."}
-    if got == target: return {"재판정": got, "검증": "통과", "검증메모": f"재판정 {got} 등급 · 목표 등급에 도달했습니다."}
-    if RANK[got] > RANK[target]: return {"재판정": got, "검증": "미달", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 높습니다. 마스킹이 덜 됐을 수 있습니다."}
-    return {"재판정": got, "검증": "과마스킹", "검증메모": f"재판정 {got} 등급 · 목표({target})보다 낮습니다. 필요 이상으로 가려졌을 수 있습니다."}
-
 def run_doc(rid, data, filename, stage, name=""):
-    """문서 한 건: 등급 판정 -> 필요한 마스킹 -> 재판정 검증. name = 분할 에이전트가 붙인 문서 이름(화면의 문서종)."""
+    """문서 한 건: 등급 판정 -> 필요한 마스킹. name = 분할 에이전트가 붙인 문서 이름(화면의 문서종)."""
     uploaded = {}   # 프로젝트 -> 올린 원본 file id. 끝나면(실패해도) Upstage에서 지운다
     try: return _pipeline(rid, data, filename, stage, uploaded, name)
     finally:
@@ -154,6 +142,8 @@ def _pipeline(rid, data, filename, stage, uploaded, name):
     stage(1); g = run_agent(AGENT_GRADE, uploaded)
     (out / "raw_grade.json").write_text(json.dumps(g, ensure_ascii=False, indent=1), encoding="utf-8")
     decision = step_text(g, "instruct"); grade = parse_grade(decision)
+    if step_text(g, "검토필요"):   # 필수값 검증(validate)이 red 면 등급 대신 'Instruct - 검토필요' 가 실행된다: 등급·마스킹 없이 보완 안내만
+        stage(3); return {"문서종": name, "검토필요": True, "사유": re.sub(r"^#+\s*|\*\*|【[^】]*】", "", decision, flags=re.M).strip(), "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
     if grade is None: raise HTTPException(502, f"등급을 읽지 못했습니다: {decision[:200]}")
     exclude = set(re.findall(r"file[-_]\w+", json.dumps(g.get("output", []), ensure_ascii=False)))
 
@@ -173,21 +163,16 @@ def _pipeline(rid, data, filename, stage, uploaded, name):
             if err: why[lv] = err
             else: res[lv] = r; (out / f"raw_{lv}.json").write_text(json.dumps(r, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    outputs, notes, pdfs = [], [], {}
+    outputs, notes = [], []
     for lv in need:
         pdf = find_pdf(res[lv], exclude | set(uploaded.values())) if lv in res else None
         if pdf is None:
             notes.append(f"{LABEL[lv]} 등급본을 만들지 못했습니다({why.get(lv, 'Mask 에이전트 출력에 PDF 없음')})"); continue
-        (out / f"{lv}.pdf").write_bytes(pdf); pdfs[lv] = pdf
+        (out / f"{lv}.pdf").write_bytes(pdf)
         outputs.append({"등급": LABEL[lv], "출처": "Studio Mask", "url": f"/runs/{rid}/{lv}.pdf"})
-    if pdfs and VERIFY:   # 만든 마스킹본을 병렬로 다시 판정
-        stage(3)
-        with ThreadPoolExecutor(len(pdfs)) as ex:
-            checks = {lv: ex.submit(verify, lv, b, out) for lv, b in pdfs.items()}
-        for o, lv in zip(outputs, pdfs): o.update(checks[lv].result())
     field = lambda k: (re.search(k + r":\s*(.+)", decision) or [None, ""])[1].strip()
-    stage(4)
-    return {"등급": grade, "문서종": name,"근거범주": field("근거범주"), "근거항목": field("근거항목"),
+    stage(3)
+    return {"등급": grade, "문서종": name,"근거범주": field("근거범주"), "근거항목": field("근거항목") or grade_basis(decision),
             "마스킹본": outputs, "비고": notes, "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
 
 def parse_split(resp, n):
@@ -264,7 +249,7 @@ def pipeline(rid, data, filename, stage):
     if len(segs) == 1:
         name, ranges = segs[0]
         if name != OTHERS: return run_doc(rid, data, filename, stage, name)
-        stage(4); return {**unsupported(name, note(ranges)), "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
+        stage(3); return {**unsupported(name, note(ranges)), "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
     hi = [0]
     def step(i): hi[0] = max(hi[0], i); stage(hi[0])   # 문서들이 병렬이라 진행 단계는 가장 앞선 값을 쓴다
     def one(k, seg):
@@ -279,8 +264,8 @@ def pipeline(rid, data, filename, stage):
         return r
     with ThreadPoolExecutor(min(len(segs), 3)) as ex: docs = list(ex.map(one, range(1, len(segs) + 1), segs))
     ok = [d["등급"] for d in docs if "등급" in d]
-    if not ok and not any("미지원" in d for d in docs): raise HTTPException(502, "분할한 문서를 모두 처리하지 못했습니다: " + "; ".join(d["오류"] for d in docs)[:300])
-    stage(4)
+    if not ok and not any("미지원" in d or "검토필요" in d for d in docs): raise HTTPException(502, "분할한 문서를 모두 처리하지 못했습니다: " + "; ".join(d["오류"] for d in docs)[:300])
+    stage(3)
     return {"결합": True, "등급": max(ok, key=RANK.get) if ok else None, "문서들": docs, "비고": [], "원본url": f"/runs/{rid}/input.pdf", "소요초": round(time.time() - t0, 1)}
 
 def work(rid, data, filename):
