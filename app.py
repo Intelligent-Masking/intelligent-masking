@@ -29,7 +29,7 @@ CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), 
 CLOUD = os.getenv("VERCEL") == "1"
 RUNS = Path("/tmp/intelligent-masking-runs") if CLOUD else HERE / "runs"
 RUNS.mkdir(parents=True, exist_ok=True)
-MAX_UPLOAD = 4_400_000 if CLOUD else 20 * 1024 * 1024   # 업로드 최대 20MB
+MAX_UPLOAD = 4_200_000 if CLOUD else 20 * 1024 * 1024   # 업로드 최대 20MB
 
 NEED = {"상": ["mid", "low"], "중": ["low"], "하": []}   # 입력 등급 -> 필요한 낮은 등급본
 LABEL = {"mid": "중", "low": "하"}
@@ -301,7 +301,7 @@ def process(file: UploadFile):
 def continue_analysis(ticket: str = Form(...), file: UploadFile | None = None):
     from cloud_jobs import advance
     data = file.file.read(MAX_UPLOAD + 1) if file else None
-    if data is not None and len(data) > MAX_UPLOAD: raise HTTPException(413, "PDF 크기는 4.4MB 이하여야 합니다.")
+    if data is not None and len(data) > MAX_UPLOAD: raise HTTPException(413, "PDF 크기는 4.2MB 이하여야 합니다.")
     return advance(sys.modules[__name__], ticket, data)
 
 @app.get("/api/status/{rid}")
@@ -321,7 +321,7 @@ def get_run(rid: str, name: str, download: int = 0):
 def index():
     html = (HERE / "index.html").read_text(encoding="utf-8")
     if CLOUD:
-        html = html.replace("PDF 파일 지원 · 여러 페이지 문서도 가능", "PDF 최대 4.4MB · 분석 최대 20분")
+        html = html.replace("PDF 파일 지원 · 여러 페이지 문서도 가능", "PDF 최대 4.2MB · 분석 최대 20분")
         html = html.replace("선택한 문서는 분석을 위해 Upstage로 전송되며, 원본과 결과는 분석 서버에 저장됩니다.", "선택한 문서는 분석을 위해 Upstage로 전송됩니다. 완료된 PDF는 이 화면에서 다운로드하며, 처리된 서버 임시 파일은 정리됩니다.")
     return html.replace("</head>", f"<script>window.IM_MAX_UPLOAD={MAX_UPLOAD};</script></head>")
 

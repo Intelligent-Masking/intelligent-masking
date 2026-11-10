@@ -109,40 +109,48 @@ def advance(service, ticket, data=None):
             return reply(state, True)
         if phase == 'prepare':
             if data is None: return reply(state, True)
-            response = retrieve(service, state['split']['job'])
-            with service.pymupdf.open(stream=data, filetype='pdf') as pdf: count = len(pdf)
-            segments = service.parse_split(response, count)
-            if not segments: raise HTTPException(502, '문서 분할 결과를 읽지 못했습니다.')
-            notes = service.parse_notes(response)
-            state['docs'] = []
-            for name, ranges in segments:
-                item = {'rid': uuid.uuid4().hex, 'name': name, 'ranges': ranges, 'files': {}}
-                state['docs'].append(item)
-                if name == service.OTHERS:
-                    item['result'] = service.unsupported(name, notes.get(tuple(ranges), notes.get(None, '')))
-                else:
-                    pdf = data if len(segments) == 1 else service.cut(data, ranges)
-                    ensure(service, item, [service.AGENT_GRADE], pdf, state['filename'])
-                    item['grade'] = launch(service, service.AGENT_GRADE, item['files'])
-            cleanup_split = state['split']['files']
-            for project, fid in cleanup_split.items(): service.drop_file(project, fid)
-            state['split']['files'] = {}
+            if 'docs' not in state:
+                response = retrieve(service, state['split']['job'])
+                with service.pymupdf.open(stream=data, filetype='pdf') as pdf: count = len(pdf)
+                segments = service.parse_split(response, count)
+                if not segments: raise HTTPException(502, '문서 분할 결과를 읽지 못했습니다.')
+                notes = service.parse_notes(response)
+                state['docs'] = []
+                for name, ranges in segments:
+                    item = {'rid': uuid.uuid4().hex, 'name': name, 'ranges': ranges, 'files': {}}
+                    if name == service.OTHERS:
+                        item['result'] = service.unsupported(name, notes.get(tuple(ranges), notes.get(None, '')))
+                    state['docs'].append(item)
+                for project, fid in state['split']['files'].items(): service.drop_file(project, fid)
+                state['split']['files'] = {}
+            # Launch one document per request so combined PDFs also stay below the function limit.
+            for item in state['docs']:
+                if 'result' in item or 'grade' in item: continue
+                pdf = data if len(state['docs']) == 1 else service.cut(data, item['ranges'])
+                ensure(service, item, [service.AGENT_GRADE], pdf, state['filename'])
+                item['grade'] = launch(service, service.AGENT_GRADE, item['files'])
+                return reply(state, True)
             state['phase'] = 'grade'
             return reply(state)
         if phase == 'grade':
             pending = False
             for item in state['docs']:
                 if 'result' in item: continue
-                response = retrieve(service, item['grade'])
-                if response is None: pending = True; continue
-                item['result'] = doc_result(service, item, response)
-                item['exclude'] = re.findall(r'file[-_]\w+', json.dumps(response.get('output', [])))
+                try:
+                    response = retrieve(service, item['grade'])
+                    if response is None: pending = True; continue
+                    item['result'] = doc_result(service, item, response)
+                    item['exclude'] = re.findall(r'file[-_]\w+', json.dumps(response.get('output', [])))
+                except HTTPException as error:
+                    if len(state['docs']) == 1: raise
+                    item['result'] = {'오류': str(error.detail)}
             if pending: return reply(state)
             state['phase'] = 'mask'
             return reply(state, True)
         if phase == 'mask':
             if data is None: return reply(state, True)
             for item in state['docs']:
+                if 'masks' in item: continue
                 result = item['result']
                 agents = {lv: agent for lv, agent in [('mid', service.AGENT_MASK_MID), ('low', service.AGENT_MASK_LOW)] if lv in service.NEED.get(result.get('등급'), [])}
                 item['masks'] = {}
@@ -153,6 +161,7 @@ def advance(service, ticket, data=None):
                 with ThreadPoolExecutor(len(agents)) as executor:
                     futures = {lv: executor.submit(launch, service, agent, item['files']) for lv, agent in agents.items()}
                     for lv, future in futures.items(): item['masks'][lv] = future.result()
+                return reply(state, True)
             state['phase'] = 'deliver'
             return reply(state)
         if phase == 'deliver':

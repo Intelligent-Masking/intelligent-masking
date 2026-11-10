@@ -64,6 +64,27 @@ class CloudTests(unittest.TestCase):
         self.assertEqual(set(self.deleted),{'file_1','file_2'})
         self.assertEqual(list(self.root.iterdir()),[])
         self.assertEqual(self.uploads,2)
+    def test_combined_documents_launch_in_separate_requests(self):
+        pdf=pymupdf.open();pdf.new_page();pdf.new_page();self.pdf=pdf.tobytes();pdf.close()
+        with patch.object(app,'parse_split',return_value=[('문서1',[(0,0)]),('문서2',[(1,1)])]):
+            result=self.start()
+            for _ in range(35):
+                before=len(self.jobs)
+                kwargs={'data':{'ticket':result['ticket']}}
+                if result.get('requiresFile'):kwargs['files']={'file':('test.pdf',self.pdf,'application/pdf')}
+                response=self.web.post('/api/continue',**kwargs)
+                self.assertEqual(response.status_code,200,response.text[:200])
+                self.assertLessEqual(len(self.jobs)-before,2)
+                if 'application/x-ndjson' in response.headers['content-type']:break
+                result=response.json()
+            else:self.fail('combined analysis never finished')
+        events=[json.loads(line) for line in response.text.splitlines()]
+        final=events[-1]['result']
+        self.assertTrue(final['결합']);self.assertEqual(len(final['문서들']),2)
+        self.assertEqual([d['쪽'] for d in final['문서들']],['1','2'])
+        self.assertEqual(len([x for x in events if 'file' in x]),6)
+        self.assertEqual(self.uploads,3);self.assertEqual(len(set(self.deleted)),3)
+        self.assertEqual(list(self.root.iterdir()),[])
     def test_unsupported_and_review_skip_masking(self):
         for review in (False, True):
             with self.subTest(review=review):
