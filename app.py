@@ -310,6 +310,9 @@ def get_run(rid: str, name: str, download: int = 0):
 @app.get("/", response_class=HTMLResponse)
 def index():
     html = (HERE / "index.html").read_text(encoding="utf-8")
+    if CLOUD:
+        html = html.replace("PDF 파일 지원 · 여러 페이지 문서도 가능", "PDF 최대 4.4MB · 여러 페이지 문서도 가능")
+        html = html.replace("선택한 문서는 분석을 위해 Upstage로 전송되며, 원본과 결과는 분석 서버에 저장됩니다.", "선택한 문서는 분석을 위해 Upstage로 전송됩니다. 완료된 PDF는 이 화면에서 다운로드하며, 처리된 서버 임시 파일은 정리됩니다.")
     return html.replace("</head>", f"<script>window.IM_MAX_UPLOAD={MAX_UPLOAD};</script></head>")
 
 @app.get("/api/health")

@@ -15,7 +15,7 @@
 
 **지원 서식 20종** · **65개 공통 평가 항목 + 서식별 필수 항목** · **32개 PDF / 38개 문서**
 
-[Upstage Studio 프로젝트](https://studio.upstage.ai/projects/proj_baHzy9KaZypvnTsB7qE8tj) · [최종 설계서](docs/submission/design.pdf)
+[실서비스 바로가기](https://intelligent-masking.vercel.app) · [Upstage Studio 프로젝트](https://studio.upstage.ai/projects/proj_baHzy9KaZypvnTsB7qE8tj) · [최종 설계서](docs/submission/design.pdf)
 
 ## 목차
 
