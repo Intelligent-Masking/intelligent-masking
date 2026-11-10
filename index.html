@@ -62,6 +62,8 @@ const $=id=>document.getElementById(id);
 const drop=$('drop'),input=$('f'),go=$('go'),dialog=$('guide-dialog');
 const stageNames=['업로드','등급 판정','마스킹','완료'];
 let file=null,busy=false;
+const documentFiles=new Map();
+const clearDocuments=()=>{for(const value of documentFiles.values()){URL.revokeObjectURL(value.url);if(value.preview)URL.revokeObjectURL(value.preview);}documentFiles.clear();};
 const icon=name=>`<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const bytes=n=>n<1024*1024?`${Math.max(1,Math.round(n/1024))} KB`:`${(n/1024/1024).toFixed(1)} MB`;
@@ -70,6 +72,7 @@ function showError(message){$('err').textContent=message;$('err').classList.remo
 function selectFile(next){
  if(busy)return;
  if(next&&!/\.pdf$/i.test(next.name)){selectFile(null);showError('PDF 파일만 분석할 수 있습니다. 파일 형식을 확인하고 다시 선택해 주세요.');input.value='';return;}
+ if(next&&next.size>(window.IM_MAX_UPLOAD||20*1024*1024)){selectFile(null);showError(`PDF 크기는 ${(window.IM_MAX_UPLOAD||20*1024*1024)/1000000}MB 이하여야 합니다.`);return;}
  file=next||null;$('err').classList.add('hide');$('selected').classList.toggle('hide',!file);$('fname').textContent=file?.name||'';$('fsize').textContent=file?bytes(file.size):'';go.disabled=!file;
  $('hint').textContent=file?'파일이 준비됐어요. 문서 분석을 시작해 주세요.':'분석할 PDF를 먼저 선택해 주세요.';
  if(!file)input.value='';
@@ -95,7 +98,7 @@ function showSteps(current,done=false){
 }
 function fail(message){setBusy(false);$('progress').classList.remove('processing');$('progress-title').textContent='분석을 완료하지 못했어요';$('progress-message').textContent='아래 안내를 확인하고 다시 시도해 주세요.';$('hint').textContent='파일을 확인한 뒤 다시 분석할 수 있습니다.';showError(message);}
 function safePdfUrl(value){if(typeof value!=='string'||!/^\/runs\/[0-9a-f]{32}\/(input|mid|low)\.pdf$/.test(value))throw Error('결과 문서 주소를 확인할 수 없습니다.');return value;}
-const docCard=(title,target,url,isOriginal)=>{url=safePdfUrl(url);if(!['상','중','하','-'].includes(target))throw Error('마스킹 목표 등급을 확인할 수 없습니다.');return `<article class="document-card"><div class="doc-top"><h4>${esc(title)}</h4><span class="doc-tag g-${target}">${target==='-'?'원본':`${isOriginal?'원본':'목표'} ${target} 등급`}</span></div><div class="doc-preview"><img src="${url}/preview" alt="${esc(title)} 첫 페이지 미리보기" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="preview-error" hidden>미리보기를 표시할 수 없습니다.<br>아래 ‘크게 보기’로 문서를 열어 주세요.</p><span class="preview-caption">첫 페이지 미리보기</span></div><div class="doc-actions"><a href="${url}" target="_blank" rel="noopener noreferrer">${icon('open')}크게 보기</a><a class="download" href="${url}?download=1">${icon('download')}PDF 다운로드</a></div></article>`;};
+const docCard=(title,target,url,isOriginal)=>{url=safePdfUrl(url);const local=documentFiles.get(url),view=local?.url||url,preview=local?.preview||`${url}/preview`,download=local?.url||`${url}?download=1`;if(!['상','중','하','-'].includes(target))throw Error('마스킹 목표 등급을 확인할 수 없습니다.');return `<article class="document-card"><div class="doc-top"><h4>${esc(title)}</h4><span class="doc-tag g-${target}">${target==='-'?'원본':`${isOriginal?'원본':'목표'} ${target} 등급`}</span></div><div class="doc-preview"><img src="${preview}" alt="${esc(title)} 첫 페이지 미리보기" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><p class="preview-error" hidden>미리보기를 표시할 수 없습니다.<br>아래 ‘크게 보기’로 문서를 열어 주세요.</p><span class="preview-caption">첫 페이지 미리보기</span></div><div class="doc-actions"><a href="${view}" target="_blank" rel="noopener noreferrer">${icon('open')}크게 보기</a><a class="download" href="${download}" download="${esc(title)}.pdf">${icon('download')}PDF 다운로드</a></div></article>`;};
 function showOut(){
  $('out').classList.remove('hide');$('hint').textContent='분석이 완료됐어요. 원본과 마스킹본을 확인해 주세요.';$('out').focus({preventScroll:true});$('out').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});
 }
@@ -136,13 +139,26 @@ function render(result){
  const notes=Array.isArray(result['비고'])?result['비고']:[];$('notes').innerHTML=notes.map(n=>`<div class="note">${esc(n)}</div>`).join('');$('no-mask').classList.toggle('hide',grade!=='하'||outputs.length>0||notes.length>0);
  showOut();
 }
-$('reset').onclick=()=>{if(busy)return;selectFile(null);$('out').classList.add('hide');$('progress').classList.add('hide');$('grid').replaceChildren();drop.focus();drop.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});};
+$('reset').onclick=()=>{if(busy)return;clearDocuments();selectFile(null);$('out').classList.add('hide');$('progress').classList.add('hide');$('grid').replaceChildren();drop.focus();drop.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});};
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+function receiveFile(item){
+ const path=safePdfUrl(item.path);
+ const blob=(text,type)=>new Blob([Uint8Array.from(atob(text),c=>c.charCodeAt(0))],{type});
+ const existing=documentFiles.get(path);if(existing){URL.revokeObjectURL(existing.url);if(existing.preview)URL.revokeObjectURL(existing.preview);}
+ documentFiles.set(path,{url:URL.createObjectURL(blob(item.pdf,'application/pdf')),preview:item.preview?URL.createObjectURL(blob(item.preview,'image/png')):null});
+}
+async function readAnalysisStream(response){
+ const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='',finished=false;
+ const accept=line=>{if(!line.trim())return;const status=JSON.parse(line);if(status.error)throw Error(status.error);if(status.file)receiveFile(status.file);if(Number.isInteger(status.step))showSteps(status.step,Boolean(status.done));if(status.done){render(status.result);finished=true;}};
+ try{while(true){const chunk=await reader.read();buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!chunk.done});let pos;while((pos=buffer.indexOf('\n'))>=0){accept(buffer.slice(0,pos));buffer=buffer.slice(pos+1);}if(chunk.done)break;}if(buffer.trim())accept(buffer);if(!finished)throw Error('분석 연결이 종료됐습니다. PDF를 다시 선택해 시도해 주세요.');}
+ finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+}
+
 go.onclick=async()=>{
- if(!file||busy)return;setBusy(true);$('err').classList.add('hide');$('out').classList.add('hide');$('hint').textContent='분석이 끝날 때까지 이 화면을 유지해 주세요.';showSteps(0);
+ if(!file||busy)return;clearDocuments();setBusy(true);$('err').classList.add('hide');$('out').classList.add('hide');$('hint').textContent='분석이 끝날 때까지 이 화면을 유지해 주세요.';showSteps(0);
  const body=new FormData();body.append('file',file);
  try{
-  const response=await fetch('/api/process',{method:'POST',body});const started=await response.json();if(!response.ok)throw Error(typeof started.detail==='string'?started.detail:'문서를 업로드하지 못했습니다. 다시 시도해 주세요.');
+  const response=await fetch('/api/process',{method:'POST',body});if(response.ok&&response.headers.get('content-type')?.includes('application/x-ndjson')){await readAnalysisStream(response);setBusy(false);return;}const started=await response.json().catch(()=>({detail:response.status===413?'파일이 너무 큽니다. 더 작은 PDF를 선택해 주세요.':'문서를 업로드하지 못했습니다.'}));if(!response.ok)throw Error(typeof started.detail==='string'?started.detail:'문서를 업로드하지 못했습니다. 다시 시도해 주세요.');
   if(!/^[0-9a-f]{32}$/.test(started.run))throw Error('분석 작업을 확인할 수 없습니다. 다시 시도해 주세요.');
   while(true){await pause(1500);const response=await fetch('/api/status/'+started.run);const status=await response.json();if(!response.ok)throw Error(typeof status.detail==='string'?status.detail:'진행 상태를 확인하지 못했습니다.');if(status.error)throw Error(status.error);showSteps(status.step,status.done);if(status.done){render(status.result);setBusy(false);break;}}
  }catch(error){fail(error instanceof TypeError?'서버에 연결하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.':error.message||'분석 중 문제가 발생했습니다. 다시 시도해 주세요.');}

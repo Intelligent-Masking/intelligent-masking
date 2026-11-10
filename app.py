@@ -6,10 +6,11 @@ import base64, json, os, re, threading, time, urllib.request, uuid
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import sys
 
 import pymupdf
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI, OpenAIError
 
@@ -25,8 +26,10 @@ AGENT_MASK_LOW = os.getenv("AGENT_MASK_LOW", "")
 AGENT_SPLIT = os.getenv("AGENT_SPLIT", "")   # 필수. 모든 문서는 먼저 분할 에이전트를 거쳐야 한 문서인지 여러 문서인지 알 수 있다.
 # 에이전트별 config(워크플로우 버전). 비우면 에이전트의 default config = 최신 버전으로 실행된다.
 CONFIG = {a: os.getenv(k, "") for a, k in ((AGENT_GRADE, "AGENT_GRADE_CONFIG"), (AGENT_MASK_MID, "AGENT_MASK_MID_CONFIG"), (AGENT_MASK_LOW, "AGENT_MASK_LOW_CONFIG"), (AGENT_SPLIT, "AGENT_SPLIT_CONFIG")) if a}
-RUNS = HERE / "runs"; RUNS.mkdir(exist_ok=True)
-MAX_UPLOAD = 20 * 1024 * 1024   # 업로드 최대 20MB
+CLOUD = os.getenv("VERCEL") == "1"
+RUNS = Path("/tmp/intelligent-masking-runs") if CLOUD else HERE / "runs"
+RUNS.mkdir(parents=True, exist_ok=True)
+MAX_UPLOAD = 4_400_000 if CLOUD else 20 * 1024 * 1024   # 업로드 최대 20MB
 
 NEED = {"상": ["mid", "low"], "중": ["low"], "하": []}   # 입력 등급 -> 필요한 낮은 등급본
 LABEL = {"mid": "중", "low": "하"}
@@ -280,9 +283,13 @@ def process(file: UploadFile):
     if not AGENT_GRADE: raise HTTPException(500, "AGENT_GRADE 가 .env 에 없습니다")
     if not AGENT_SPLIT: raise HTTPException(500, "AGENT_SPLIT 가 .env 에 없습니다")
     data = file.file.read(MAX_UPLOAD + 1)
-    if len(data) > MAX_UPLOAD: raise HTTPException(413, f"파일이 너무 큽니다. {MAX_UPLOAD // 1024 // 1024}MB 이하의 PDF만 올릴 수 있습니다")
+    if len(data) > MAX_UPLOAD: raise HTTPException(413, f"파일이 너무 큽니다. {MAX_UPLOAD / 1_000_000:g}MB 이하의 PDF만 올릴 수 있습니다")
     if data[:4] != b"%PDF": raise HTTPException(400, "PDF 파일만 지원합니다")
     rid = uuid.uuid4().hex; (RUNS / rid).mkdir(); (RUNS / rid / "input.pdf").write_bytes(data)
+    if CLOUD:
+        from cloud_stream import stream_results
+        return StreamingResponse(stream_results(sys.modules[__name__], rid, data, file.filename or "input.pdf"),
+                                 media_type="application/x-ndjson", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
     JOBS[rid] = {"step": 0, "done": False}
     threading.Thread(target=work, args=(rid, data, file.filename or "input.pdf"), daemon=True).start()
     return {"run": rid, "steps": STEPS}
@@ -301,7 +308,14 @@ def get_run(rid: str, name: str, download: int = 0):
     return FileResponse(p, media_type="application/pdf", headers={"Content-Disposition": f'{disp}; filename="{name}"'})
 
 @app.get("/", response_class=HTMLResponse)
-def index(): return (HERE / "index.html").read_text(encoding="utf-8")
+def index():
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    return html.replace("</head>", f"<script>window.IM_MAX_UPLOAD={MAX_UPLOAD};</script></head>")
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "mode": "stream" if CLOUD else "poll", "maxUploadBytes": MAX_UPLOAD,
+            "configured": bool(os.getenv("UPSTAGE_API_KEY") and AGENT_GRADE and AGENT_SPLIT and AGENT_MASK_MID and AGENT_MASK_LOW)}
 
 @app.get("/runs/{rid}/{name}/preview")
 def preview_run(rid: str, name: str):
