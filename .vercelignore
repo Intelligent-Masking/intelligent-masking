@@ -4,7 +4,7 @@ runs/
 .venv*/
 __pycache__/
 docs/
-test_*.py
+test_*
 assets/screenshots/
 assets/workflows/
 assets/readme-hero.png

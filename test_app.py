@@ -26,7 +26,7 @@ import io
 from fastapi import UploadFile
 app.AGENT_GRADE = "agt_x"; app.AGENT_SPLIT = ""; app.MAX_UPLOAD = 100
 try: app.process(UploadFile(file=io.BytesIO(b"%PDF"), filename="a.pdf")); raise SystemExit("분할 에이전트 없이 통과")
-except app.HTTPException as e: assert e.status_code == 500 and "AGENT_SPLIT" in e.detail   # 분할은 필수
+except app.HTTPException as e: assert e.status_code == 503 and "서비스" in e.detail and "AGENT_" not in e.detail   # 분할은 필수
 app.AGENT_SPLIT = "agt_s"
 for body, code in ((b"%PDF" + b"x" * 200, 413), (b"hello", 400)):
     try: app.process(UploadFile(file=io.BytesIO(body), filename="a.pdf")); raise SystemExit("거부되지 않음")

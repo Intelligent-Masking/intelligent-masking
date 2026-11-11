@@ -4,7 +4,7 @@
   "functions": {
     "app.py": {
       "maxDuration": 300,
-      "excludeFiles": "{docs/**,test_*.py,.env*}"
+      "excludeFiles": "{docs/**,test_*,.env*}"
     }
   },
   "regions": [

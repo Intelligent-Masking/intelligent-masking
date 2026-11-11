@@ -89,17 +89,19 @@ py -m venv .venv
 
 ### 4. 웹페이지 열기
 
-브라우저에서 [http://localhost:8000](http://localhost:8000)에 접속해 PDF를 업로드합니다.
+브라우저에서 [http://localhost:8000](http://localhost:8000)에 접속해 PDF를 업로드합니다. 파일 선택과 끌어놓기로 PDF를 여러 번 추가해도 기존 목록과 결과가 유지됩니다. 최대 3개를 동시에 분석하며, 분석 중에 추가한 파일도 빈자리가 생기는 대로 시작합니다. 파일 탭·좌우 버튼·모바일 스와이프로 각 파일의 결과를 확인합니다. 한 파일이 실패해도 나머지는 계속 처리하고, 일시적 오류가 난 파일만 다시 분석할 수 있습니다. 완료된 파일은 다시 호출하지 않고 새 파일과 재시도 가능한 실패 파일만 분석합니다. 목록 전체를 비우려면 모두 제거 또는 새 문서 분석을 사용합니다. 파일당 용량 제한은 그대로 적용됩니다.
 
 ## 협업과 점검
 
 작업별 브랜치에서 변경한 뒤 Pull Request로 검토하고 `main`에 합칩니다. 각 팀원은 자신의 `.env`와 실행 환경을 준비합니다. API 키, 가상환경, 실제 실행 중 쌓이는 `runs/` 폴더는 Git에 포함하지 않습니다.
 
 ```bash
-.venv/bin/python -m unittest test_web -v
+.venv/bin/python -m unittest test_cloud test_web -v
+.venv/bin/python test_app.py
+node test_ui.cjs
 ```
 
-외부 API 호출 없이 PDF 미리보기의 크기 제한, 원본 보존, 잘못된 경로와 손상된 문서 처리를 검사합니다. Windows에서는 실행 파일을 `.venv\Scripts\python.exe`로 바꿉니다.
+외부 API 호출 없이 PDF 미리보기·업로드 검증·클라우드 진행 상태와 UI의 최대 3개 동시 실행·실패 격리·재시도를 검사합니다. UI 검사는 Node.js가 필요합니다. Windows에서는 실행 파일을 `.venv\Scripts\python.exe`로 바꿉니다.
 
 ## 현재 구현 범위
 

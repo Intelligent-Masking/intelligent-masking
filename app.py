@@ -40,7 +40,7 @@ _clients, _scope = {}, {}
 def client(project=None):
     """에이전트가 프로젝트 소속이면 파일도 같은 프로젝트로 올려야 접근된다(x-project-id 헤더)."""
     if project not in _clients:
-        if not os.getenv("UPSTAGE_API_KEY"): raise HTTPException(500, "UPSTAGE_API_KEY 가 .env 에 없습니다")
+        if not os.getenv("UPSTAGE_API_KEY"): raise HTTPException(503, "문서 분석 서비스 연결을 준비하고 있습니다. 잠시 후 다시 시도해 주세요.")
         _clients[project] = OpenAI(api_key=os.environ["UPSTAGE_API_KEY"], base_url="https://api.upstage.ai/v2",
                                   timeout=60 if CLOUD else 600, max_retries=1 if CLOUD else 2,
                                   default_headers={"x-project-id": project} if project else None)
@@ -154,7 +154,7 @@ def _pipeline(rid, data, filename, stage, uploaded, name):
     need = NEED[grade]; res, why = {}, {}   # why: 등급본을 못 만든 이유
     agents = {lv: a for lv, a in (("mid", AGENT_MASK_MID), ("low", AGENT_MASK_LOW)) if lv in need and a}
     for lv in need:
-        if lv not in agents: why[lv] = f"AGENT_MASK_{lv.upper()} 가 .env 에 없습니다"
+        if lv not in agents: why[lv] = "마스킹 서비스 설정 확인이 필요합니다. 잠시 후 다시 분석해 주세요."
     def mask(a):   # 한쪽이 실패해도 다른 쪽 결과는 살린다
         try: return run_agent(a, uploaded), None
         except HTTPException as e: return None, str(e.detail)
@@ -281,11 +281,17 @@ def work(rid, data, filename):
 
 @app.post("/api/process")
 def process(file: UploadFile):
-    if not AGENT_GRADE: raise HTTPException(500, "AGENT_GRADE 가 .env 에 없습니다")
-    if not AGENT_SPLIT: raise HTTPException(500, "AGENT_SPLIT 가 .env 에 없습니다")
+    if not AGENT_GRADE or not AGENT_SPLIT:
+        raise HTTPException(503, "문서 분석 서비스를 준비하고 있습니다. 잠시 후 다시 시도해 주세요.")
     data = file.file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD: raise HTTPException(413, f"파일이 너무 큽니다. {MAX_UPLOAD / 1_000_000:g}MB 이하의 PDF만 올릴 수 있습니다")
-    if data[:4] != b"%PDF": raise HTTPException(400, "PDF 파일만 지원합니다")
+    if data[:4] != b"%PDF": raise HTTPException(400, "파일 내용이 PDF 형식이 아닙니다. PDF로 다시 저장한 뒤 선택해 주세요.")
+    try:
+        with pymupdf.open(stream=data, filetype="pdf") as document:
+            if document.is_encrypted: raise HTTPException(422, "암호가 설정된 PDF입니다. 암호를 해제한 뒤 다시 선택해 주세요.")
+            if not len(document): raise HTTPException(422, "문서에 페이지가 없습니다. 내용이 있는 PDF를 선택해 주세요.")
+    except (pymupdf.FileDataError, RuntimeError, ValueError):
+        raise HTTPException(422, "PDF 내용을 읽을 수 없습니다. 파일을 다시 저장하거나 다른 PDF를 선택해 주세요.")
     rid = uuid.uuid4().hex; (RUNS / rid).mkdir(); (RUNS / rid / "input.pdf").write_bytes(data)
     if CLOUD:
         from cloud_jobs import start

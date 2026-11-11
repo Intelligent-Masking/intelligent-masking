@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from fastapi.testclient import TestClient
 
 import pymupdf
 from fastapi import HTTPException
@@ -50,6 +51,23 @@ class PreviewTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as error:
             app.preview_run(self.rid, "input.pdf")
         self.assertEqual(error.exception.status_code, 422)
+
+
+class UploadValidationTests(unittest.TestCase):
+    def test_unreadable_and_encrypted_pdfs_never_reach_upstage(self):
+        with patch.object(app, 'AGENT_GRADE', 'grade'),patch.object(app, 'AGENT_SPLIT', 'split'),patch.object(app, 'client') as external:
+            web=TestClient(app.app)
+            for data,expected in [(b'not a PDF',400),(b'%PDF-broken',422)]:
+                response=web.post('/api/process',files={'file':('bad.pdf',data,'application/pdf')})
+                self.assertEqual(response.status_code,expected)
+                self.assertIn('PDF',response.json()['detail'])
+            with pymupdf.open() as doc:
+                doc.new_page()
+                locked=doc.tobytes(encryption=pymupdf.PDF_ENCRYPT_AES_256,owner_pw='owner',user_pw='user')
+            response=web.post('/api/process',files={'file':('locked.pdf',locked,'application/pdf')})
+            self.assertEqual(response.status_code,422)
+            self.assertIn('암호',response.json()['detail'])
+            external.assert_not_called()
 
 
 if __name__ == "__main__":
