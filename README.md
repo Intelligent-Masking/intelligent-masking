@@ -17,6 +17,17 @@
 
 [실서비스 바로가기](https://intelligent-masking.vercel.app) · [Upstage Studio 프로젝트](https://studio.upstage.ai/projects/proj_baHzy9KaZypvnTsB7qE8tj) · [최종 설계서](docs/submission/design.pdf)
 
+## Upstage 워크플로우
+
+실서비스에서 사용하는 네 워크플로우입니다. 이름을 누르면 해당 설정의 노드 구성을 확인할 수 있습니다.
+
+| 워크플로우 | 역할 | 서비스 설정 |
+|---|---|---|
+| [결합 문서 처리](https://studio.upstage.ai/agents/agt_LNUt32RyRaZWKpwKVeg3Lz?configVer=6) | 문서 유형 분류·결합 문서 분할·미지원 분기 | #6 |
+| [등급화_V3 검증](https://studio.upstage.ai/agents/agt_3MgFHdi9n4Ze3b9mxsp8sJ?configVer=13) | 필수값 검증·개인정보 추출·상·중·하 판정 | #13 |
+| [마스킹-중](https://studio.upstage.ai/agents/agt_Kjrj85Z4eMwXQMd7AsSfXT?configVer=6) | 중 등급 목표 마스킹 PDF 생성 | #6 |
+| [마스킹-하](https://studio.upstage.ai/agents/agt_Vz5tWfeyE9ctihjXJhztha?configVer=2) | 하 등급 목표 마스킹 PDF 생성 | #2 |
+
 ## 목차
 
 자세한 내용은 아래 문서를 눌러 확인할 수 있습니다.
